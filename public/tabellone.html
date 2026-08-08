@@ -5,265 +5,213 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Rischiatutto - Tabellone TV</title>
   <script src="/socket.io/socket.io.js"></script>
-  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
   <style>
-    /* Animazione Pop-up dinamica dalla casella */
-    #overlay-domanda {
-      transition: transform 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.35s ease;
-      transform-origin: center center;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body { background: linear-gradient(135deg, #020617, #0f172a, #020617); color: #fff; min-height: 100vh; padding: 20px; display: flex; flex-direction: column; justify-content: space-between; }
+    
+    header { display: flex; justify-content: space-between; align-items: center; background: rgba(15, 23, 42, 0.8); padding: 15px 25px; border-radius: 16px; border: 1px solid #1e293b; margin-bottom: 20px; }
+    .logo { font-size: 24px; font-weight: 900; color: #fbbf24; tracking-wide: 1px; }
+    .pin-box { background: #020617; padding: 8px 20px; border-radius: 12px; border: 1px solid #f59e0b; text-align: right; }
+    .pin-label { font-size: 10px; color: #94a3b8; text-transform: uppercase; font-weight: bold; }
+    .pin-code { font-size: 28px; font-weight: 900; color: #fbbf24; font-family: monospace; }
 
-    .modal-open {
-      transform: scale(1) !important;
-      opacity: 1 !important;
-      pointer-events: auto !important;
-    }
+    main { display: grid; grid-template-columns: 1fr; gap: 20px; flex-grow: 1; }
+    @media (min-width: 1024px) { main { grid-template-columns: 3fr 1fr; } }
 
-    .modal-closed {
-      transform: scale(0) !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
-    }
+    .board-container { background: rgba(15, 23, 42, 0.6); border: 1px solid #1e293b; border-radius: 24px; padding: 20px; position: relative; min-height: 500px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+    
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; width: 100%; }
+    .cat-column { display: flex; flex-direction: column; gap: 10px; }
+    .cat-title { background: #1e1b4b; border: 1px solid #4338ca; color: #fde047; font-weight: 900; text-align: center; padding: 12px; border-radius: 12px; font-size: 13px; text-transform: uppercase; height: 50px; display: flex; align-items: center; justify-content: center; }
+    
+    .btn-points { background: #020617; color: #fbbf24; font-weight: 900; font-size: 22px; padding: 18px 0; border-radius: 14px; border: 1px solid #1e293b; cursor: pointer; transition: all 0.2s; }
+    .btn-points:hover { background: #f59e0b; color: #020617; border-color: #fbbf24; transform: scale(1.03); }
+    .btn-points:disabled { background: rgba(15, 23, 42, 0.4); color: #475569; border-color: #0f172a; cursor: not-allowed; text-decoration: line-through; transform: none; }
 
-    /* Effetti di luce studio TV */
-    .glow-yellow { box-shadow: 0 0 35px rgba(234, 179, 8, 0.3); }
-    .glow-red { box-shadow: 0 0 40px rgba(239, 68, 68, 0.5); }
+    /* Overlay Domanda con Effetto Pop-up */
+    .overlay { position: absolute; inset: 0; background: rgba(2, 6, 23, 0.96); border: 2px solid #f59e0b; border-radius: 24px; padding: 30px; display: flex; flex-direction: column; justify-content: space-between; align-items: center; text-align: center; z-index: 20; transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+    .overlay.hidden { transform: scale(0); opacity: 0; pointer-events: none; }
+    .overlay.visible { transform: scale(1); opacity: 1; pointer-events: auto; }
+
+    .badge { background: #f59e0b; color: #020617; font-weight: 900; font-size: 16px; padding: 6px 20px; border-radius: 20px; text-transform: uppercase; }
+    .question-text { font-size: 32px; font-weight: 800; color: #f8fafc; margin: auto; max-width: 800px; line-height: 1.4; }
+    .buzzer-status { width: 100%; max-width: 600px; padding: 15px; border-radius: 16px; background: #0f172a; border: 1px solid #1e293b; font-size: 20px; font-weight: 800; color: #94a3b8; }
+    .buzzer-status.booked { background: #450a0a; border-color: #ef4444; color: #fca5a5; animation: pulse 1s infinite; }
+
+    .sidebar { background: rgba(15, 23, 42, 0.6); border: 1px solid #1e293b; border-radius: 24px; padding: 20px; display: flex; flex-direction: column; justify-content: space-between; }
+    .sidebar h2 { font-size: 18px; color: #818cf8; text-transform: uppercase; margin-bottom: 15px; border-bottom: 1px solid #1e293b; padding-bottom: 10px; }
+    .player-row { display: flex; justify-content: space-between; background: #020617; padding: 12px 16px; border-radius: 12px; border: 1px solid #1e293b; margin-bottom: 8px; font-weight: bold; }
+    .player-pts { color: #34d399; font-family: monospace; font-size: 18px; }
+
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
   </style>
 </head>
-<body class="bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-950 text-white min-h-screen p-4 md:p-6 flex flex-col justify-between select-none font-sans">
+<body>
 
-  <!-- HEADER: LOGO E PIN STANZA -->
-  <header class="flex justify-between items-center mb-6 bg-slate-900/80 backdrop-blur-md p-4 rounded-2xl border border-slate-800 shadow-2xl">
-    <div class="flex items-center space-x-3">
-      <span class="text-3xl filter drop-shadow">📺</span>
-      <h1 class="text-3xl font-black text-amber-400 tracking-wider filter drop-shadow">RISCHIATUTTO</h1>
-    </div>
-
-    <div class="flex items-center space-x-4 bg-slate-950/90 px-6 py-2 rounded-xl border border-amber-500/50 shadow-inner">
-      <div class="text-right">
-        <div class="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Codice Stanza</div>
-        <div id="codice-stanza" class="text-3xl font-black text-amber-400 font-mono tracking-widest">----</div>
-      </div>
+  <header>
+    <div class="logo">📺 RISCHIATUTTO</div>
+    <div class="pin-box">
+      <div class="pin-label">Codice Stanza</div>
+      <div id="codice-stanza" class="pin-code">----</div>
     </div>
   </header>
 
-  <!-- CONTENUTO PRINCIPALE -->
-  <main class="grid grid-cols-1 lg:grid-cols-4 gap-6 my-auto">
-    
-    <!-- CONTENITORE TABELLONE E OVERLAY -->
-    <div id="tabellone-container" class="lg:col-span-3 bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-3xl p-6 shadow-2xl relative min-h-[520px] flex items-center justify-center overflow-hidden">
-      
-      <!-- GRIGLIA CASSELLE -->
-      <div id="griglia-tabellone" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 w-full">
-        <!-- Generato dinamicamente via JS -->
-      </div>
+  <main>
+    <div id="tabellone-container" class="board-container">
+      <!-- Griglia Categorie e Domande -->
+      <div id="griglia-tabellone" class="grid"></div>
 
-      <!-- OVERLAY POPUP DOMANDA (EFFETTO ZOOM) -->
-      <div id="overlay-domanda" class="modal-closed absolute inset-0 bg-slate-950/95 backdrop-blur-xl rounded-3xl p-8 flex flex-col justify-between items-center text-center border-2 border-amber-500/70 glow-yellow z-20">
-        
-        <div class="space-y-4 w-full my-auto">
-          <span id="domanda-categoria-punti" class="inline-block bg-amber-500 text-slate-950 font-black text-lg px-6 py-1.5 rounded-full uppercase tracking-widest shadow-lg">
-            CATEGORIA - 000 PT
-          </span>
-          <div id="domanda-testo" class="text-3xl md:text-5xl font-black text-slate-100 leading-relaxed px-4 max-w-4xl mx-auto drop-shadow-md">
-            In attesa della domanda...
-          </div>
+      <!-- Pop-up Domanda -->
+      <div id="overlay-domanda" class="overlay hidden">
+        <div style="margin-top: 20px;">
+          <span id="domanda-badge" class="badge">CATEGORIA - 000 PT</span>
         </div>
-
-        <!-- NOTIFICA PRENOTAZIONE BUZZER -->
-        <div id="box-prenotazione" class="w-full max-w-2xl py-4 px-6 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-xl transition-all duration-300 mt-6">
-          <span id="testo-prenotazione" class="text-xl md:text-2xl font-black text-slate-400">
-            🔔 BUZZER ATTIVO! In attesa di prenotazione...
-          </span>
+        <div id="domanda-testo" class="question-text">Caricamento domanda...</div>
+        <div id="box-prenotazione" class="buzzer-status">
+          🔔 BUZZER ATTIVO! In attesa di prenotazione...
         </div>
       </div>
-
     </div>
 
-    <!-- SIDEBAR CLASSIFICA CONCORRENTI -->
-    <div class="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-3xl p-6 shadow-2xl flex flex-col justify-between">
+    <!-- Sidebar Classifica -->
+    <div class="sidebar">
       <div>
-        <h2 class="text-xl font-black text-indigo-400 uppercase tracking-wide mb-4 flex items-center space-x-2 border-b border-slate-800/80 pb-3">
-          <span>🏆</span>
-          <span>Classifica</span>
-        </h2>
-        <div id="lista-classifica" class="space-y-3">
-          <div class="text-slate-500 text-center py-8 font-medium">In attesa dei concorrenti...</div>
+        <h2>🏆 Classifica</h2>
+        <div id="lista-classifica">
+          <div style="color: #64748b; text-align: center; padding: 20px;">Nessun giocatore connesso</div>
         </div>
       </div>
-      <div class="mt-4 text-center text-[11px] text-slate-500 font-bold uppercase tracking-widest bg-slate-950/50 py-2 rounded-xl border border-slate-800/50">
-        Inserisci il PIN per accedere
-      </div>
     </div>
-
   </main>
 
   <script>
-    // Generazione PIN Stanza
+    // Gestione Errori di Emergenza visibile a schermo
+    window.onerror = function(msg, url, line) {
+      document.body.innerHTML = `<div style="color:red; background:#000; padding:20px; font-size:20px;">
+        ⚠️ Errore nel Tabellone: ${msg}<br><small>Linea: ${line}</small>
+      </div>`;
+    };
+
     const codiceStanza = Math.floor(1000 + Math.random() * 9000).toString();
 
     document.addEventListener('DOMContentLoaded', () => {
-      // Mostra il PIN a schermo
-      const elPin = document.getElementById('codice-stanza');
-      if (elPin) elPin.innerText = codiceStanza;
+      document.getElementById('codice-stanza').innerText = codiceStanza;
 
-      const socket = io();
-      socket.emit('uniscitiStanza', { codiceStanza, ruoli: 'tabellone' });
+      let socket;
+      try {
+        socket = io();
+        socket.emit('uniscitiStanza', { codiceStanza, ruoli: 'tabellone' });
+      } catch(e) {
+        console.error("Socket.io non connesso", e);
+      }
 
       let elencoCategorie = [];
 
-      // Carica file domande.json
+      // Carica il file domande.json
       fetch('/domande.json')
-        .then(res => res.json())
+        .then(res => {
+          if (!res.ok) throw new Error("File domande.json non trovato in public/");
+          return res.json();
+        })
         .then(data => {
           elencoCategorie = data.categorie;
           costruisciGriglia(data.categorie, socket);
         })
-        .catch(err => console.error("Errore caricamento domande:", err));
+        .catch(err => {
+          document.getElementById('griglia-tabellone').innerHTML = `<div style="color:#ef4444; font-weight:bold; grid-column: 1/-1; text-align:center;">
+            ❌ Impossibile caricare domande.json da public/<br>${err.message}
+          </div>`;
+        });
 
-      // Gestione Eventi Socket.IO
-      socket.on('aggiornaStato', (gameState) => {
-        if (gameState.punteggi) aggiornaClassifica(gameState.punteggi);
-        if (gameState.domandaAttiva) mostraDomanda(gameState.domandaAttiva);
-        if (gameState.prenotato) mostraGiocatore(gameState.prenotato);
-      });
-
-      socket.on('apriDomanda', (data) => mostraDomanda(data));
-      socket.on('giocatorePrenotato', (nick) => mostraGiocatore(nick));
-      socket.on('aggiornaPunteggi', (punteggi) => aggiornaClassifica(punteggi));
-      
-      socket.on('chiudiDomanda', (data) => {
-        aggiornaClassifica(data.punteggi);
-        nascondiDomanda();
-      });
-
-      socket.on('riapriBuzzer', (punteggi) => {
-        aggiornaClassifica(punteggi);
-        const box = document.getElementById('box-prenotazione');
-        const testo = document.getElementById('testo-prenotazione');
-        if (box && testo) {
-          box.className = "w-full max-w-2xl py-4 px-6 rounded-2xl bg-emerald-950/80 border border-emerald-500/80 shadow-lg";
-          testo.className = "text-xl md:text-2xl font-black text-emerald-400";
-          testo.innerText = "🟢 BUZZER RIAPERTO! Risposta errata.";
-        }
-      });
-
-      socket.on('resetBuzzer', () => {
-        const box = document.getElementById('box-prenotazione');
-        const testo = document.getElementById('testo-prenotazione');
-        if (box && testo) {
-          box.className = "w-full max-w-2xl py-4 px-6 rounded-2xl bg-slate-900/90 border border-slate-800";
-          testo.className = "text-xl md:text-2xl font-black text-slate-400";
-          testo.innerText = "🔔 BUZZER ATTIVO! In attesa di prenotazione...";
-        }
-      });
-
-      // Generazione dinamica della griglia
       function costruisciGriglia(categorie, socketInstance) {
         const container = document.getElementById('griglia-tabellone');
-        if (!container) return;
         container.innerHTML = '';
 
         categorie.forEach((cat, indexCat) => {
-          let col = `<div class="flex flex-col space-y-3">
-            <div class="bg-indigo-950/90 border border-indigo-500/40 text-amber-300 font-black text-center p-3 rounded-xl uppercase text-xs md:text-sm h-14 flex items-center justify-center shadow-lg">
-              ${cat.nome}
-            </div>`;
+          const col = document.createElement('div');
+          col.className = 'cat-column';
+
+          const title = document.createElement('div');
+          title.className = 'cat-title';
+          title.innerText = cat.nome;
+          col.appendChild(title);
 
           cat.domande.forEach((d, indexDom) => {
-            const btnId = `btn-${indexCat}-${indexDom}`;
-            col += `
-              <button id="${btnId}" 
-                      class="bg-slate-950/80 hover:bg-amber-500 text-amber-400 hover:text-slate-950 font-black text-2xl py-5 rounded-2xl border border-slate-800 hover:border-amber-400 transition-all shadow-md transform active:scale-95">
-                ${d.punti}
-              </button>`;
-          });
+            const btn = document.createElement('button');
+            btn.className = 'btn-points';
+            btn.innerText = d.punti;
+            btn.id = `btn-${indexCat}-${indexDom}`;
 
-          col += `</div>`;
-          container.innerHTML += col;
-        });
+            btn.onclick = (e) => {
+              btn.disabled = true;
 
-        // Eventi click con calcolo coordinate per l'effetto Pop-up
-        categorie.forEach((cat, indexCat) => {
-          cat.domande.forEach((d, indexDom) => {
-            const btnId = `btn-${indexCat}-${indexDom}`;
-            const btn = document.getElementById(btnId);
-            if (btn) {
-              btn.onclick = (e) => {
-                btn.disabled = true;
-                btn.className = "bg-slate-900/40 text-slate-700 font-black text-2xl py-5 rounded-2xl border border-slate-800/30 cursor-not-allowed line-through";
-                
-                // Imposta l'origine della trasformazione nel centro del pulsante premuto
-                calcolaOrigineAnimazione(btn);
+              // Origine animazione pop-up dal pulsante
+              const rect = btn.getBoundingClientRect();
+              const containerRect = document.getElementById('tabellone-container').getBoundingClientRect();
+              const x = (rect.left + rect.width / 2) - containerRect.left;
+              const y = (rect.top + rect.height / 2) - containerRect.top;
+              document.getElementById('overlay-domanda').style.transformOrigin = `${x}px ${y}px`;
 
+              if (socketInstance) {
                 socketInstance.emit('selezionaDomanda', {
                   categoria: cat.nome,
                   punti: d.punti,
                   testo: d.testo,
                   risposta: d.risposta
                 });
-              };
-            }
+              }
+            };
+            col.appendChild(btn);
           });
+
+          container.appendChild(col);
         });
       }
 
-      // Calcola le coordinate X/Y del pulsante cliccato per il Pop-up
-      function calcolaOrigineAnimazione(elemento) {
-        const overlay = document.getElementById('overlay-domanda');
-        const container = document.getElementById('tabellone-container');
-        if (!overlay || !container || !elemento) return;
+      // Eventi Socket.IO
+      if (socket) {
+        socket.on('apriDomanda', (data) => {
+          document.getElementById('domanda-badge').innerText = `${data.categoria} - ${data.punti} PT`;
+          document.getElementById('domanda-testo').innerText = data.testo;
+          
+          const overlay = document.getElementById('overlay-domanda');
+          overlay.classList.remove('hidden');
+          overlay.classList.add('visible');
+        });
 
-        const rectElem = elemento.getBoundingClientRect();
-        const rectCont = container.getBoundingClientRect();
+        socket.on('chiudiDomanda', (data) => {
+          const overlay = document.getElementById('overlay-domanda');
+          overlay.classList.remove('visible');
+          overlay.classList.add('hidden');
+          if (data.punteggi) aggiornaClassifica(data.punteggi);
+        });
 
-        const x = (rectElem.left + rectElem.width / 2) - rectCont.left;
-        const y = (rectElem.top + rectElem.height / 2) - rectCont.top;
+        socket.on('giocatorePrenotato', (nick) => {
+          const box = document.getElementById('box-prenotazione');
+          box.className = 'buzzer-status booked';
+          box.innerText = `🚨 PRENOTATO: ${nick.toUpperCase()}`;
+        });
 
-        overlay.style.transformOrigin = `${x}px ${y}px`;
-      }
+        socket.on('resetBuzzer', () => {
+          const box = document.getElementById('box-prenotazione');
+          box.className = 'buzzer-status';
+          box.innerText = '🔔 BUZZER ATTIVO! In attesa di prenotazione...';
+        });
 
-      function mostraDomanda(data) {
-        document.getElementById('domanda-categoria-punti').innerText = `${data.categoria} - ${data.punti} PT`;
-        document.getElementById('domanda-testo').innerText = data.testo;
-        
-        const overlay = document.getElementById('overlay-domanda');
-        if (overlay) {
-          overlay.classList.remove('modal-closed');
-          overlay.classList.add('modal-open');
-        }
-      }
-
-      function nascondiDomanda() {
-        const overlay = document.getElementById('overlay-domanda');
-        if (overlay) {
-          overlay.classList.remove('modal-open');
-          overlay.classList.add('modal-closed');
-        }
-      }
-
-      function mostraGiocatore(nick) {
-        const box = document.getElementById('box-prenotazione');
-        const testo = document.getElementById('testo-prenotazione');
-        if (box && testo) {
-          box.className = "w-full max-w-2xl py-4 px-6 rounded-2xl bg-red-950 border-2 border-red-500 animate-pulse glow-red shadow-2xl";
-          testo.className = "text-2xl md:text-3xl font-black text-red-400";
-          testo.innerText = `🚨 PRENOTATO: ${nick.toUpperCase()}`;
-        }
+        socket.on('aggiornaPunteggi', (punteggi) => aggiornaClassifica(punteggi));
       }
 
       function aggiornaClassifica(punteggi) {
         const container = document.getElementById('lista-classifica');
-        if (!container) return;
         const entries = Object.entries(punteggi);
         if (entries.length === 0) return;
 
         entries.sort((a, b) => b[1] - a[1]);
 
         container.innerHTML = entries.map(([nick, pt], i) => `
-          <div class="flex justify-between items-center bg-slate-950/80 p-3.5 rounded-2xl border border-slate-800">
-            <span class="font-bold text-slate-200">#${i + 1} ${nick}</span>
-            <span class="font-mono font-extrabold text-emerald-400 text-lg">${pt} pt</span>
+          <div class="player-row">
+            <span>#${i + 1} ${nick}</span>
+            <span class="player-pts">${pt} pt</span>
           </div>
         `).join('');
       }

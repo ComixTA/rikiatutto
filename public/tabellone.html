@@ -5,19 +5,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Rischiatutto - Tabellone TV</title>
   <script src="/socket.io/socket.io.js"></script>
-  <!-- Tailwind CSS compilato (rimuove l'avviso in console) -->
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
 </head>
 <body class="bg-gray-950 text-white min-h-screen p-6 flex flex-col justify-between select-none">
 
-  <!-- HEADER -->
+  <!-- HEADER CON LOGO E PIN STANZA -->
   <header class="flex justify-between items-center mb-6 bg-gray-900 p-4 rounded-2xl border border-gray-800 shadow-xl">
     <div class="flex items-center space-x-3">
       <span class="text-3xl">📺</span>
       <h1 class="text-3xl font-black text-yellow-400 tracking-wider">RISCHIATUTTO</h1>
     </div>
-    <div id="stato-tabellone" class="px-4 py-2 bg-gray-800 rounded-xl font-bold text-gray-400">
-      Seleziona una casella
+
+    <!-- BOX PIN STANZA -->
+    <div class="flex items-center space-x-4 bg-gray-950 px-6 py-2 rounded-xl border border-yellow-500/40">
+      <div class="text-right">
+        <div class="text-xs text-gray-400 uppercase font-bold tracking-widest">Codice Stanza</div>
+        <div id="codice-stanza" class="text-3xl font-black text-yellow-400 font-mono">----</div>
+      </div>
     </div>
   </header>
 
@@ -63,6 +67,9 @@
           <div class="text-gray-500 text-center py-8 font-medium">In attesa dei concorrenti...</div>
         </div>
       </div>
+      <div class="mt-4 text-center text-xs text-gray-500 font-bold uppercase">
+        Inserisci il PIN per entrare
+      </div>
     </div>
 
   </main>
@@ -71,7 +78,14 @@
     const socket = io();
     let elencoCategorie = [];
 
-    // 1. CARICAMENTO DOMANDE DA FILE JSON
+    // Genera un PIN casulale a 4 cifre (es. 4829)
+    const codiceStanza = Math.floor(1000 + Math.random() * 9000).toString();
+    document.getElementById('codice-stanza').innerText = codiceStanza;
+
+    // Connette il Tabellone alla propria stanza
+    socket.emit('uniscitiStanza', { codiceStanza, ruoli: 'tabellone' });
+
+    // Carica Domande da domande.json
     fetch('/domande.json')
       .then(res => res.json())
       .then(data => {
@@ -80,7 +94,6 @@
       })
       .catch(err => console.error("Errore caricamento domande:", err));
 
-    // 2. COSTRUZIONE GRIGLIA CON GESTIONE SICURA DEI CLICK
     function costruisciGriglia(categorie) {
       const container = document.getElementById('griglia-tabellone');
       container.innerHTML = '';
@@ -106,7 +119,6 @@
       });
     }
 
-    // 3. INVIA LA DOMANDA A REGIA E SERVER SENZA ERRORI DI SINTASSI
     function invioDomanda(indexCat, indexDom, btnId) {
       const domandaObj = elencoCategorie[indexCat].domande[indexDom];
       const categoriaNome = elencoCategorie[indexCat].nome;
@@ -117,7 +129,6 @@
         btn.className = "bg-gray-900 text-gray-700 font-black text-2xl py-5 rounded-2xl cursor-not-allowed line-through";
       }
 
-      // Invia l'oggetto strutturato via Socket.IO
       socket.emit('selezionaDomanda', {
         categoria: categoriaNome,
         punti: domandaObj.punti,
@@ -126,7 +137,7 @@
       });
     }
 
-    // 4. ASCOLTO EVENTI SOCKET.IO
+    // Ascolto eventi Socket.IO della stanza
     socket.on('aggiornaStato', (gameState) => {
       if (gameState.punteggi) aggiornaClassifica(gameState.punteggi);
       if (gameState.domandaAttiva) mostraDomanda(gameState.domandaAttiva);

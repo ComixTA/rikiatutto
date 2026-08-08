@@ -75,135 +75,149 @@
   </main>
 
   <script>
-    const socket = io();
-    let elencoCategorie = [];
-
-    // Genera un PIN casulale a 4 cifre (es. 4829)
+    // Genera un PIN a 4 cifre immediato
     const codiceStanza = Math.floor(1000 + Math.random() * 9000).toString();
-    document.getElementById('codice-stanza').innerText = codiceStanza;
 
-    // Connette il Tabellone alla propria stanza
-    socket.emit('uniscitiStanza', { codiceStanza, ruoli: 'tabellone' });
+    document.addEventListener('DOMContentLoaded', () => {
+      // 1. MOSTRA SUBITO IL PIN
+      const elPin = document.getElementById('codice-stanza');
+      if (elPin) elPin.innerText = codiceStanza;
 
-    // Carica Domande da domande.json
-    fetch('/domande.json')
-      .then(res => res.json())
-      .then(data => {
-        elencoCategorie = data.categorie;
-        costruisciGriglia(data.categorie);
-      })
-      .catch(err => console.error("Errore caricamento domande:", err));
+      // 2. CONNETTI SOCKET.IO
+      const socket = io();
+      socket.emit('uniscitiStanza', { codiceStanza, ruoli: 'tabellone' });
 
-    function costruisciGriglia(categorie) {
-      const container = document.getElementById('griglia-tabellone');
-      container.innerHTML = '';
+      let elencoCategorie = [];
 
-      categorie.forEach((cat, indexCat) => {
-        let col = `<div class="flex flex-col space-y-3">
-          <div class="bg-indigo-900 text-yellow-300 font-black text-center p-3 rounded-xl uppercase text-xs md:text-sm h-14 flex items-center justify-center">
-            ${cat.nome}
-          </div>`;
+      // 3. CARICA DOMANDE
+      fetch('/domande.json')
+        .then(res => res.json())
+        .then(data => {
+          elencoCategorie = data.categorie;
+          costruisciGriglia(data.categorie, socket);
+        })
+        .catch(err => console.error("Errore caricamento domande:", err));
 
-        cat.domande.forEach((d, indexDom) => {
-          const btnId = `btn-${indexCat}-${indexDom}`;
-          col += `
-            <button id="${btnId}" 
-                    onclick="invioDomanda(${indexCat}, ${indexDom}, '${btnId}')" 
-                    class="bg-gray-950 hover:bg-yellow-500 text-yellow-400 hover:text-gray-950 font-black text-2xl py-5 rounded-2xl border border-gray-800 transition">
-              ${d.punti}
-            </button>`;
+      // 4. ASCOLTO EVENTI SOCKET.IO
+      socket.on('aggiornaStato', (gameState) => {
+        if (gameState.punteggi) aggiornaClassifica(gameState.punteggi);
+        if (gameState.domandaAttiva) mostraDomanda(gameState.domandaAttiva);
+        if (gameState.prenotato) mostraGiocatore(gameState.prenotato);
+      });
+
+      socket.on('apriDomanda', (data) => mostraDomanda(data));
+      socket.on('giocatorePrenotato', (nick) => mostraGiocatore(nick));
+      socket.on('aggiornaPunteggi', (punteggi) => aggiornaClassifica(punteggi));
+      
+      socket.on('chiudiDomanda', (data) => {
+        aggiornaClassifica(data.punteggi);
+        nascondiDomanda();
+      });
+
+      socket.on('riapriBuzzer', (punteggi) => {
+        aggiornaClassifica(punteggi);
+        const box = document.getElementById('box-prenotazione');
+        const testo = document.getElementById('testo-prenotazione');
+        if (box && testo) {
+          box.className = "w-full max-w-xl py-4 px-6 rounded-2xl bg-green-950 border border-green-500";
+          testo.className = "text-2xl font-black text-green-400";
+          testo.innerText = "🟢 BUZZER RIAPERTO!";
+        }
+      });
+
+      socket.on('resetBuzzer', () => {
+        const box = document.getElementById('box-prenotazione');
+        const testo = document.getElementById('testo-prenotazione');
+        if (box && testo) {
+          box.className = "w-full max-w-xl py-4 px-6 rounded-2xl bg-gray-900 border border-gray-800";
+          testo.className = "text-2xl font-black text-gray-400";
+          testo.innerText = "🔔 BUZZER ATTIVO! In attesa di prenotazione...";
+        }
+      });
+
+      function costruisciGriglia(categorie, socketInstance) {
+        const container = document.getElementById('griglia-tabellone');
+        if (!container) return;
+        container.innerHTML = '';
+
+        categorie.forEach((cat, indexCat) => {
+          let col = `<div class="flex flex-col space-y-3">
+            <div class="bg-indigo-900 text-yellow-300 font-black text-center p-3 rounded-xl uppercase text-xs md:text-sm h-14 flex items-center justify-center">
+              ${cat.nome}
+            </div>`;
+
+          cat.domande.forEach((d, indexDom) => {
+            const btnId = `btn-${indexCat}-${indexDom}`;
+            col += `
+              <button id="${btnId}" 
+                      class="bg-gray-950 hover:bg-yellow-500 text-yellow-400 hover:text-gray-950 font-black text-2xl py-5 rounded-2xl border border-gray-800 transition">
+                ${d.punti}
+              </button>`;
+          });
+
+          col += `</div>`;
+          container.innerHTML += col;
         });
 
-        col += `</div>`;
-        container.innerHTML += col;
-      });
-    }
-
-    function invioDomanda(indexCat, indexDom, btnId) {
-      const domandaObj = elencoCategorie[indexCat].domande[indexDom];
-      const categoriaNome = elencoCategorie[indexCat].nome;
-
-      const btn = document.getElementById(btnId);
-      if (btn) {
-        btn.disabled = true;
-        btn.className = "bg-gray-900 text-gray-700 font-black text-2xl py-5 rounded-2xl cursor-not-allowed line-through";
+        // Assegna gli eventi ai pulsanti
+        categorie.forEach((cat, indexCat) => {
+          cat.domande.forEach((d, indexDom) => {
+            const btnId = `btn-${indexCat}-${indexDom}`;
+            const btn = document.getElementById(btnId);
+            if (btn) {
+              btn.onclick = () => {
+                btn.disabled = true;
+                btn.className = "bg-gray-900 text-gray-700 font-black text-2xl py-5 rounded-2xl cursor-not-allowed line-through";
+                socketInstance.emit('selezionaDomanda', {
+                  categoria: cat.nome,
+                  punti: d.punti,
+                  testo: d.testo,
+                  risposta: d.risposta
+                });
+              };
+            }
+          });
+        });
       }
 
-      socket.emit('selezionaDomanda', {
-        categoria: categoriaNome,
-        punti: domandaObj.punti,
-        testo: domandaObj.testo,
-        risposta: domandaObj.risposta
-      });
-    }
+      function mostraDomanda(data) {
+        document.getElementById('domanda-categoria-punti').innerText = `${data.categoria} - ${data.punti} PT`;
+        document.getElementById('domanda-testo').innerText = data.testo;
+        document.getElementById('overlay-domanda').classList.remove('hidden');
+        document.getElementById('overlay-domanda').classList.add('flex');
+      }
 
-    // Ascolto eventi Socket.IO della stanza
-    socket.on('aggiornaStato', (gameState) => {
-      if (gameState.punteggi) aggiornaClassifica(gameState.punteggi);
-      if (gameState.domandaAttiva) mostraDomanda(gameState.domandaAttiva);
-      if (gameState.prenotato) mostraGiocatore(gameState.prenotato);
+      function nascondiDomanda() {
+        document.getElementById('overlay-domanda').classList.remove('flex');
+        document.getElementById('overlay-domanda').classList.add('hidden');
+      }
+
+      function mostraGiocatore(nick) {
+        const box = document.getElementById('box-prenotazione');
+        const testo = document.getElementById('testo-prenotazione');
+        if (box && testo) {
+          box.className = "w-full max-w-xl py-4 px-6 rounded-2xl bg-red-950 border-2 border-red-500 animate-pulse";
+          testo.className = "text-3xl font-black text-red-400";
+          testo.innerText = `🚨 PRENOTATO: ${nick.toUpperCase()}`;
+        }
+      }
+
+      function aggiornaClassifica(punteggi) {
+        const container = document.getElementById('lista-classifica');
+        if (!container) return;
+        const entries = Object.entries(punteggi);
+        if (entries.length === 0) return;
+
+        entries.sort((a, b) => b[1] - a[1]);
+
+        container.innerHTML = entries.map(([nick, pt], i) => `
+          <div class="flex justify-between items-center bg-gray-950 p-4 rounded-2xl border border-gray-800">
+            <span class="font-bold text-white">#${i + 1} ${nick}</span>
+            <span class="font-mono font-extrabold text-green-400">${pt} pt</span>
+          </div>
+        `).join('');
+      }
     });
-
-    socket.on('apriDomanda', (data) => mostraDomanda(data));
-    socket.on('giocatorePrenotato', (nick) => mostraGiocatore(nick));
-    socket.on('aggiornaPunteggi', (punteggi) => aggiornaClassifica(punteggi));
-    
-    socket.on('chiudiDomanda', (data) => {
-      aggiornaClassifica(data.punteggi);
-      nascondiDomanda();
-    });
-
-    socket.on('riapriBuzzer', (punteggi) => {
-      aggiornaClassifica(punteggi);
-      const box = document.getElementById('box-prenotazione');
-      const testo = document.getElementById('testo-prenotazione');
-      box.className = "w-full max-w-xl py-4 px-6 rounded-2xl bg-green-950 border border-green-500";
-      testo.className = "text-2xl font-black text-green-400";
-      testo.innerText = "🟢 BUZZER RIAPERTO!";
-    });
-
-    socket.on('resetBuzzer', () => {
-      const box = document.getElementById('box-prenotazione');
-      const testo = document.getElementById('testo-prenotazione');
-      box.className = "w-full max-w-xl py-4 px-6 rounded-2xl bg-gray-900 border border-gray-800";
-      testo.className = "text-2xl font-black text-gray-400";
-      testo.innerText = "🔔 BUZZER ATTIVO! In attesa di prenotazione...";
-    });
-
-    function mostraDomanda(data) {
-      document.getElementById('domanda-categoria-punti').innerText = `${data.categoria} - ${data.punti} PT`;
-      document.getElementById('domanda-testo').innerText = data.testo;
-      document.getElementById('overlay-domanda').classList.remove('hidden');
-      document.getElementById('overlay-domanda').classList.add('flex');
-    }
-
-    function nascondiDomanda() {
-      document.getElementById('overlay-domanda').classList.remove('flex');
-      document.getElementById('overlay-domanda').classList.add('hidden');
-    }
-
-    function mostraGiocatore(nick) {
-      const box = document.getElementById('box-prenotazione');
-      const testo = document.getElementById('testo-prenotazione');
-      box.className = "w-full max-w-xl py-4 px-6 rounded-2xl bg-red-950 border-2 border-red-500 animate-pulse";
-      testo.className = "text-3xl font-black text-red-400";
-      testo.innerText = `🚨 PRENOTATO: ${nick.toUpperCase()}`;
-    }
-
-    function aggiornaClassifica(punteggi) {
-      const container = document.getElementById('lista-classifica');
-      const entries = Object.entries(punteggi);
-      if (entries.length === 0) return;
-
-      entries.sort((a, b) => b[1] - a[1]);
-
-      container.innerHTML = entries.map(([nick, pt], i) => `
-        <div class="flex justify-between items-center bg-gray-950 p-4 rounded-2xl border border-gray-800">
-          <span class="font-bold text-white">#${i + 1} ${nick}</span>
-          <span class="font-mono font-extrabold text-green-400">${pt} pt</span>
-        </div>
-      `).join('');
-    }
   </script>
 </body>
 </html>

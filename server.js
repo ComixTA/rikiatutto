@@ -6,74 +6,93 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// Rende pubblica la cartella public (HTML, JS, domande.json)
 app.use(express.static('public'));
 
-// Stato del gioco in memoria
-let gameState = {
-  domandaAttiva: null,
-  prenotato: null,
-  punteggi: {}
-};
+// Struttura dati per gestire le stanze: { "1234": { domandaAttiva, prenotato, punteggi: {} } }
+const stanze = {};
 
 io.on('connection', (socket) => {
-  console.log('Un utente si è connesso:', socket.id);
+  let stanzaCorrente = null;
+  let nicknameCorrente = null;
 
-  // Invia lo stato attuale al nuovo connesso
-  socket.emit('aggiornaStato', gameState);
+  // 1. CREAZIONE O INGRESSO IN UNA STANZA
+  socket.on('uniscitiStanza', ({ codiceStanza, ruoli, nickname }) => {
+    stanzaCorrente = codiceStanza;
+    nicknameCorrente = nickname;
 
-  // Quando un concorrente inserisce il nickname
-  socket.on('registraGiocatore', (nickname) => {
-    if (nickname && !(nickname in gameState.punteggi)) {
-      gameState.punteggi[nickname] = 0;
+    socket.join(codiceStanza);
+
+    // Inizializza la stanza se non esiste
+    if (!stanze[codiceStanza]) {
+      stanze[codiceStanza] = {
+        domandaAttiva: null,
+        prenotato: null,
+        punteggi: {}
+      };
     }
-    io.emit('aggiornaPunteggi', gameState.punteggi);
+
+    const stanza = stanze[codiceStanza];
+
+    // Se è un giocatore, aggiungilo ai punteggi
+    if (ruoli === 'giocatore' && nickname) {
+      if (!(nickname in stanza.punteggi)) {
+        stanza.punteggi[nickname] = 0;
+      }
+    }
+
+    // Invia lo stato attuale della stanza al client appena connesso
+    socket.emit('aggiornaStato', stanza);
+    io.to(codiceStanza).emit('aggiornaPunteggi', stanza.punteggi);
   });
 
-  // QUANDO DAL TABELLONE VIENE CLICCATA UNA DOMANDA
+  // 2. SELEZIONE DOMANDA DAL TABELLONE
   socket.on('selezionaDomanda', (data) => {
-    gameState.domandaAttiva = data;
-    gameState.prenotato = null;
-    // Invia l'evento 'apriDomanda' a TUTTI i client (Tabellone, Regia, Giocatori)
-    io.emit('apriDomanda', data);
-  });
-
-  // Quando un giocatore premi il BUZZER
-  socket.on('prenota', (nickname) => {
-    if (gameState.domandaAttiva && !gameState.prenotato) {
-      gameState.prenotato = nickname;
-      io.emit('giocatorePrenotato', nickname);
-    }
-  });
-
-  // Gestione dell'esito dalla Regia
-  socket.on('esitoRisposta', (data) => {
-    const { giocatore, esito, punti } = data;
+    if (!stanzaCorrente || !stanze[stanzaCorrente]) return;
     
-    if (esito === 'corretta') {
-      gameState.punteggi[giocatore] = (gameState.punteggi[giocatore] || 0) + punti;
-      gameState.domandaAttiva = null;
-      gameState.prenotato = null;
-      io.emit('chiudiDomanda', { punteggi: gameState.punteggi });
-    } else if (esito === 'errata') {
-      gameState.punteggi[giocatore] = (gameState.punteggi[giocatore] || 0) - punti;
-      gameState.prenotato = null;
-      io.emit('riapriBuzzer', gameState.punteggi);
+    const stanza = stanze[stanzaCorrente];
+    stanza.domandaAttiva = data;
+    stanza.prenotato = null;
+
+    io.to(stanzaCorrente).emit('apriDomanda', data);
+  });
+
+  // 3. PRENOTAZIONE BUZZER DA GIOCATORE
+  socket.on('prenota', () => {
+    if (!stanzaCorrente || !stanze[stanzaCorrente]) return;
+
+    const stanza = stanze[stanzaCorrente];
+    if (stanza.domandaAttiva && !stanza.prenotato) {
+      stanza.prenotato = nicknameCorrente;
+      io.to(stanzaCorrente).emit('giocatorePrenotato', nicknameCorrente);
     }
   });
 
-  // Sblocco / Reset dalla Regia
-  socket.on('resetTurno', () => {
-    gameState.prenotato = null;
-    io.emit('resetBuzzer');
+  // 4. ESITO RISPOSTA DALLA REGIA
+  socket.on('esitoRisposta', (data) => {
+    if (!stanzaCorrente || !stanze[stanzaCorrente]) return;
+
+    const { giocatore, esito, punti } = data;
+    const stanza = stanze[stanzaCorrente];
+
+    if (esito === 'corretta') {
+      stanza.punteggi[giocatore] = (stanza.punteggi[giocatore] || 0) + punti;
+      stanza.domandaAttiva = null;
+      stanza.prenotato = null;
+      io.to(stanzaCorrente).emit('chiudiDomanda', { punteggi: stanza.punteggi });
+    } else if (esito === 'errata') {
+      stanza.punteggi[giocatore] = (stanza.punteggi[giocatore] || 0) - punti;
+      stanza.prenotato = null;
+      io.to(stanzaCorrente).emit('riapriBuzzer', stanza.punteggi);
+    }
   });
 
-  socket.on('disconnect', () => {
-    console.log('Utente disconnesso:', socket.id);
+  // 5. RESET TURNO
+  socket.on('resetTurno', () => {
+    if (!stanzaCorrente || !stanze[stanzaCorrente]) return;
+    stanze[stanzaCorrente].prenotato = null;
+    io.to(stanzaCorrente).emit('resetBuzzer');
   });
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Server attivo sulla porta ${PORT}`);
-});
+server.listen(PORT, () => console.log(`Server attivo su porta ${PORT}`));

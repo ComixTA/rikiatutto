@@ -7,22 +7,39 @@
   <script src="/socket.io/socket.io.js"></script>
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
   <style>
-    /* Effetto bagliore per atmosfera TV */
-    .glow-yellow { box-shadow: 0 0 25px rgba(234, 179, 8, 0.25); }
-    .glow-red { box-shadow: 0 0 30px rgba(239, 68, 68, 0.4); }
+    /* Animazione Pop-up dinamica dalla casella */
+    #overlay-domanda {
+      transition: transform 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.35s ease;
+      transform-origin: center center;
+    }
+
+    .modal-open {
+      transform: scale(1) !important;
+      opacity: 1 !important;
+      pointer-events: auto !important;
+    }
+
+    .modal-closed {
+      transform: scale(0) !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+    }
+
+    /* Effetti di luce studio TV */
+    .glow-yellow { box-shadow: 0 0 35px rgba(234, 179, 8, 0.3); }
+    .glow-red { box-shadow: 0 0 40px rgba(239, 68, 68, 0.5); }
   </style>
 </head>
 <body class="bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-950 text-white min-h-screen p-4 md:p-6 flex flex-col justify-between select-none font-sans">
 
-  <!-- HEADER CON LOGO E PIN STANZA -->
-  <header class="flex justify-between items-center mb-6 bg-slate-900/80 backdrop-blur-md p-4 rounded-2xl border border-slate-800/80 shadow-2xl">
+  <!-- HEADER: LOGO E PIN STANZA -->
+  <header class="flex justify-between items-center mb-6 bg-slate-900/80 backdrop-blur-md p-4 rounded-2xl border border-slate-800 shadow-2xl">
     <div class="flex items-center space-x-3">
       <span class="text-3xl filter drop-shadow">📺</span>
       <h1 class="text-3xl font-black text-amber-400 tracking-wider filter drop-shadow">RISCHIATUTTO</h1>
     </div>
 
-    <!-- BOX PIN STANZA -->
-    <div class="flex items-center space-x-4 bg-slate-950/90 px-6 py-2 rounded-xl border border-amber-500/40 shadow-inner">
+    <div class="flex items-center space-x-4 bg-slate-950/90 px-6 py-2 rounded-xl border border-amber-500/50 shadow-inner">
       <div class="text-right">
         <div class="text-[10px] text-slate-400 uppercase font-bold tracking-widest">Codice Stanza</div>
         <div id="codice-stanza" class="text-3xl font-black text-amber-400 font-mono tracking-widest">----</div>
@@ -33,16 +50,16 @@
   <!-- CONTENUTO PRINCIPALE -->
   <main class="grid grid-cols-1 lg:grid-cols-4 gap-6 my-auto">
     
-    <!-- AREA TABELLONE E OVERLAY SCHERMO INTERACTIVO (3 COLONNE) -->
-    <div class="lg:col-span-3 bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-3xl p-6 shadow-2xl relative min-h-[520px] flex items-center justify-center overflow-hidden">
+    <!-- CONTENITORE TABELLONE E OVERLAY -->
+    <div id="tabellone-container" class="lg:col-span-3 bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-3xl p-6 shadow-2xl relative min-h-[520px] flex items-center justify-center overflow-hidden">
       
-      <!-- GRIGLIA TABELLONE -->
-      <div id="griglia-tabellone" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 w-full transition-all duration-300">
+      <!-- GRIGLIA CASSELLE -->
+      <div id="griglia-tabellone" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 w-full">
         <!-- Generato dinamicamente via JS -->
       </div>
 
-      <!-- OVERLAY DOMANDA ATTIVA (SOSTITUISCE LA GRIGLIA PULITAMENTE) -->
-      <div id="overlay-domanda" class="hidden w-full h-full min-h-[460px] bg-slate-950/95 rounded-2xl p-8 flex-col justify-between items-center text-center border-2 border-amber-500/60 glow-yellow transition-all duration-300">
+      <!-- OVERLAY POPUP DOMANDA (EFFETTO ZOOM) -->
+      <div id="overlay-domanda" class="modal-closed absolute inset-0 bg-slate-950/95 backdrop-blur-xl rounded-3xl p-8 flex flex-col justify-between items-center text-center border-2 border-amber-500/70 glow-yellow z-20">
         
         <div class="space-y-4 w-full my-auto">
           <span id="domanda-categoria-punti" class="inline-block bg-amber-500 text-slate-950 font-black text-lg px-6 py-1.5 rounded-full uppercase tracking-widest shadow-lg">
@@ -63,7 +80,7 @@
 
     </div>
 
-    <!-- SIDEBAR CLASSIFICA CONCORRENTI (1 COLONNA) -->
+    <!-- SIDEBAR CLASSIFICA CONCORRENTI -->
     <div class="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-3xl p-6 shadow-2xl flex flex-col justify-between">
       <div>
         <h2 class="text-xl font-black text-indigo-400 uppercase tracking-wide mb-4 flex items-center space-x-2 border-b border-slate-800/80 pb-3">
@@ -75,16 +92,18 @@
         </div>
       </div>
       <div class="mt-4 text-center text-[11px] text-slate-500 font-bold uppercase tracking-widest bg-slate-950/50 py-2 rounded-xl border border-slate-800/50">
-        Collegati a /giocatore.html
+        Inserisci il PIN per accedere
       </div>
     </div>
 
   </main>
 
   <script>
+    // Generazione PIN Stanza
     const codiceStanza = Math.floor(1000 + Math.random() * 9000).toString();
 
     document.addEventListener('DOMContentLoaded', () => {
+      // Mostra il PIN a schermo
       const elPin = document.getElementById('codice-stanza');
       if (elPin) elPin.innerText = codiceStanza;
 
@@ -93,6 +112,7 @@
 
       let elencoCategorie = [];
 
+      // Carica file domande.json
       fetch('/domande.json')
         .then(res => res.json())
         .then(data => {
@@ -101,6 +121,7 @@
         })
         .catch(err => console.error("Errore caricamento domande:", err));
 
+      // Gestione Eventi Socket.IO
       socket.on('aggiornaStato', (gameState) => {
         if (gameState.punteggi) aggiornaClassifica(gameState.punteggi);
         if (gameState.domandaAttiva) mostraDomanda(gameState.domandaAttiva);
@@ -137,6 +158,7 @@
         }
       });
 
+      // Generazione dinamica della griglia
       function costruisciGriglia(categorie, socketInstance) {
         const container = document.getElementById('griglia-tabellone');
         if (!container) return;
@@ -161,14 +183,19 @@
           container.innerHTML += col;
         });
 
+        // Eventi click con calcolo coordinate per l'effetto Pop-up
         categorie.forEach((cat, indexCat) => {
           cat.domande.forEach((d, indexDom) => {
             const btnId = `btn-${indexCat}-${indexDom}`;
             const btn = document.getElementById(btnId);
             if (btn) {
-              btn.onclick = () => {
+              btn.onclick = (e) => {
                 btn.disabled = true;
                 btn.className = "bg-slate-900/40 text-slate-700 font-black text-2xl py-5 rounded-2xl border border-slate-800/30 cursor-not-allowed line-through";
+                
+                // Imposta l'origine della trasformazione nel centro del pulsante premuto
+                calcolaOrigineAnimazione(btn);
+
                 socketInstance.emit('selezionaDomanda', {
                   categoria: cat.nome,
                   punti: d.punti,
@@ -181,31 +208,38 @@
         });
       }
 
+      // Calcola le coordinate X/Y del pulsante cliccato per il Pop-up
+      function calcolaOrigineAnimazione(elemento) {
+        const overlay = document.getElementById('overlay-domanda');
+        const container = document.getElementById('tabellone-container');
+        if (!overlay || !container || !elemento) return;
+
+        const rectElem = elemento.getBoundingClientRect();
+        const rectCont = container.getBoundingClientRect();
+
+        const x = (rectElem.left + rectElem.width / 2) - rectCont.left;
+        const y = (rectElem.top + rectElem.height / 2) - rectCont.top;
+
+        overlay.style.transformOrigin = `${x}px ${y}px`;
+      }
+
       function mostraDomanda(data) {
         document.getElementById('domanda-categoria-punti').innerText = `${data.categoria} - ${data.punti} PT`;
         document.getElementById('domanda-testo').innerText = data.testo;
         
-        // NASCONDE LA GRIGLIA PER EVITARE SOVRAPPOSIZIONI E CAOS VISIVO
-        const griglia = document.getElementById('griglia-tabellone');
-        if (griglia) griglia.classList.add('hidden');
-
         const overlay = document.getElementById('overlay-domanda');
         if (overlay) {
-          overlay.classList.remove('hidden');
-          overlay.classList.add('flex');
+          overlay.classList.remove('modal-closed');
+          overlay.classList.add('modal-open');
         }
       }
 
       function nascondiDomanda() {
         const overlay = document.getElementById('overlay-domanda');
         if (overlay) {
-          overlay.classList.remove('flex');
-          overlay.classList.add('hidden');
+          overlay.classList.remove('modal-open');
+          overlay.classList.add('modal-closed');
         }
-
-        // RIATTIFA LA GRIGLIA QUANDO LA DOMANDA SI CHIUDE
-        const griglia = document.getElementById('griglia-tabellone');
-        if (griglia) griglia.classList.remove('hidden');
       }
 
       function mostraGiocatore(nick) {

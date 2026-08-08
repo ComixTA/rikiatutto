@@ -5,17 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Rischiatutto - Tabellone TV</title>
   <script src="/socket.io/socket.io.js"></script>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Tailwind CSS compilato (rimuove l'avviso in console) -->
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
 </head>
-<body class="bg-slate-950 text-white min-h-screen p-6 flex flex-col justify-between select-none">
+<body class="bg-gray-950 text-white min-h-screen p-6 flex flex-col justify-between select-none">
 
-  <!-- HEADER CON TITOLO E STATO DEL GIOCO -->
-  <header class="flex justify-between items-center mb-6 bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-xl">
+  <!-- HEADER -->
+  <header class="flex justify-between items-center mb-6 bg-gray-900 p-4 rounded-2xl border border-gray-800 shadow-xl">
     <div class="flex items-center space-x-3">
       <span class="text-3xl">📺</span>
-      <h1 class="text-3xl font-black text-amber-400 tracking-wider">RISCHIATUTTO</h1>
+      <h1 class="text-3xl font-black text-yellow-400 tracking-wider">RISCHIATUTTO</h1>
     </div>
-    <div id="stato-tabellone" class="px-4 py-2 bg-slate-800 rounded-xl font-bold text-slate-400">
+    <div id="stato-tabellone" class="px-4 py-2 bg-gray-800 rounded-xl font-bold text-gray-400">
       Seleziona una casella
     </div>
   </header>
@@ -23,18 +24,17 @@
   <!-- CONTENUTO PRINCIPALE -->
   <main class="grid grid-cols-1 lg:grid-cols-4 gap-6 my-auto">
     
-    <!-- AREA TABELLONE / DOMANDA (3 COLONNE) -->
-    <div class="lg:col-span-3 bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl relative min-h-[500px] flex items-center justify-center">
+    <!-- GRIGLIA TABELLONE -->
+    <div class="lg:col-span-3 bg-gray-900 border border-gray-800 rounded-3xl p-6 shadow-2xl relative min-h-[500px] flex items-center justify-center">
       
-      <!-- GRIGLIA TABELLONE CATEGORIE -->
       <div id="griglia-tabellone" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 w-full">
-        <!-- Generato dinamicamente via JS da domande.json -->
+        <!-- Generato dinamicamente via JS -->
       </div>
 
-      <!-- POPUP / OVERLAY DOMANDA ATTIVA -->
-      <div id="overlay-domanda" class="hidden absolute inset-0 bg-slate-950/95 rounded-3xl p-8 flex-col justify-between items-center text-center z-10 border-2 border-amber-500/50 backdrop-blur-md">
+      <!-- OVERLAY DOMANDA ATTIVA -->
+      <div id="overlay-domanda" class="hidden absolute inset-0 bg-gray-950 rounded-3xl p-8 flex flex-col justify-between items-center text-center z-10 border-2 border-yellow-500">
         <div class="space-y-2 w-full">
-          <span id="domanda-categoria-punti" class="inline-block bg-amber-500 text-slate-950 font-black text-lg px-4 py-1 rounded-full uppercase tracking-widest">
+          <span id="domanda-categoria-punti" class="inline-block bg-yellow-500 text-gray-950 font-black text-lg px-4 py-1 rounded-full uppercase tracking-widest">
             CATEGORIA - 000 PT
           </span>
           <div id="domanda-testo" class="text-3xl md:text-4xl font-extrabold text-white leading-relaxed pt-6">
@@ -42,9 +42,9 @@
           </div>
         </div>
 
-        <!-- BOX NOTIFICA PRENOTAZIONE BUZZER -->
-        <div id="box-prenotazione" class="w-full max-w-xl py-4 px-6 rounded-2xl bg-slate-900 border border-slate-800 transition-all">
-          <span id="testo-prenotazione" class="text-2xl font-black text-slate-400">
+        <!-- NOTIFICA PRENOTAZIONE BUZZER -->
+        <div id="box-prenotazione" class="w-full max-w-xl py-4 px-6 rounded-2xl bg-gray-900 border border-gray-800">
+          <span id="testo-prenotazione" class="text-2xl font-black text-gray-400">
             🔔 BUZZER ATTIVO! In attesa di prenotazione...
           </span>
         </div>
@@ -52,192 +52,147 @@
 
     </div>
 
-    <!-- SIDEBAR CLASSIFICA CONCORRENTI (1 COLONNA) -->
-    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl flex flex-col justify-between">
+    <!-- SIDEBAR CLASSIFICA -->
+    <div class="bg-gray-900 border border-gray-800 rounded-3xl p-6 shadow-2xl flex flex-col justify-between">
       <div>
         <h2 class="text-xl font-black text-indigo-400 uppercase tracking-wide mb-4 flex items-center space-x-2">
           <span>🏆</span>
           <span>Classifica</span>
         </h2>
         <div id="lista-classifica" class="space-y-3">
-          <div class="text-slate-500 text-center py-8 font-medium">In attesa dei concorrenti...</div>
+          <div class="text-gray-500 text-center py-8 font-medium">In attesa dei concorrenti...</div>
         </div>
-      </div>
-
-      <div class="mt-6 pt-4 border-t border-slate-800 text-center text-xs text-slate-500 font-semibold uppercase tracking-widest">
-        Collegati a /giocatore.html
       </div>
     </div>
 
   </main>
 
-  <!-- SCRIPT LOGICA TABELLONE -->
   <script>
     const socket = io();
+    let elencoCategorie = [];
 
-    // 1. CARICAMENTO DEL FILE JSON CON LE DOMANDE
+    // 1. CARICAMENTO DOMANDE DA FILE JSON
     fetch('/domande.json')
-      .then(response => {
-        if (!response.ok) throw new Error("Impossibile caricare domande.json");
-        return response.json();
-      })
+      .then(res => res.json())
       .then(data => {
-        costruisciGrigliaTabellone(data.categorie);
+        elencoCategorie = data.categorie;
+        costruisciGriglia(data.categorie);
       })
-      .catch(err => {
-        console.error("Errore caricamento domande:", err);
-        document.getElementById('griglia-tabellone').innerHTML = `
-          <div class="col-span-full text-center text-red-400 font-bold p-8">
-            ❌ Errore nel caricamento del file domande.json nella cartella public/
-          </div>`;
-      });
+      .catch(err => console.error("Errore caricamento domande:", err));
 
-    // 2. FUNZIONE PER GENERARE LA GRIGLIA SUL TABELLONE
-    function costruisciGrigliaTabellone(categorie) {
+    // 2. COSTRUZIONE GRIGLIA CON GESTIONE SICURA DEI CLICK
+    function costruisciGriglia(categorie) {
       const container = document.getElementById('griglia-tabellone');
       container.innerHTML = '';
 
       categorie.forEach((cat, indexCat) => {
-        let colonnaHtml = `
-          <div class="flex flex-col space-y-3">
-            <div class="bg-indigo-900/80 border border-indigo-500/30 text-amber-300 font-black text-center p-3 rounded-xl uppercase tracking-wider text-xs md:text-sm h-14 flex items-center justify-center shadow-lg">
-              ${cat.nome}
-            </div>
-        `;
+        let col = `<div class="flex flex-col space-y-3">
+          <div class="bg-indigo-900 text-yellow-300 font-black text-center p-3 rounded-xl uppercase text-xs md:text-sm h-14 flex items-center justify-center">
+            ${cat.nome}
+          </div>`;
 
         cat.domande.forEach((d, indexDom) => {
           const btnId = `btn-${indexCat}-${indexDom}`;
-          // Sanitizza eventuali virgolette nel testo
-          const testoPulito = d.testo.replace(/'/g, "\\'").replace(/"/g, "&quot;");
-          const rispostaPulita = d.risposta.replace(/'/g, "\\'").replace(/"/g, "&quot;");
-
-          colonnaHtml += `
+          col += `
             <button id="${btnId}" 
-                    onclick="selezionaDomanda('${cat.nome}', ${d.punti}, '${testoPulito}', '${rispostaPulita}', '${btnId}')" 
-                    class="bg-slate-950 hover:bg-amber-500 text-amber-400 hover:text-slate-950 font-black text-2xl py-5 rounded-2xl border border-slate-800 hover:border-amber-400 transition-all shadow-md transform active:scale-95">
+                    onclick="invioDomanda(${indexCat}, ${indexDom}, '${btnId}')" 
+                    class="bg-gray-950 hover:bg-yellow-500 text-yellow-400 hover:text-gray-950 font-black text-2xl py-5 rounded-2xl border border-gray-800 transition">
               ${d.punti}
-            </button>
-          `;
+            </button>`;
         });
 
-        colonnaHtml += `</div>`;
-        container.innerHTML += colonnaHtml;
+        col += `</div>`;
+        container.innerHTML += col;
       });
     }
 
-    // 3. SELEZIONE DELLA DOMANDA
-    function selezionaDomanda(categoria, punti, testo, risposta, btnId) {
-      // Disabilita visivamente il pulsante cliccato
+    // 3. INVIA LA DOMANDA A REGIA E SERVER SENZA ERRORI DI SINTASSI
+    function invioDomanda(indexCat, indexDom, btnId) {
+      const domandaObj = elencoCategorie[indexCat].domande[indexDom];
+      const categoriaNome = elencoCategorie[indexCat].nome;
+
       const btn = document.getElementById(btnId);
       if (btn) {
         btn.disabled = true;
-        btn.className = "bg-slate-900/40 text-slate-700 font-black text-2xl py-5 rounded-2xl border border-slate-800/50 cursor-not-allowed line-through";
+        btn.className = "bg-gray-900 text-gray-700 font-black text-2xl py-5 rounded-2xl cursor-not-allowed line-through";
       }
 
-      // Invia l'evento al server Socket.IO
-      socket.emit('selezionaDomanda', { categoria, punti, testo, risposta });
+      // Invia l'oggetto strutturato via Socket.IO
+      socket.emit('selezionaDomanda', {
+        categoria: categoriaNome,
+        punti: domandaObj.punti,
+        testo: domandaObj.testo,
+        risposta: domandaObj.risposta
+      });
     }
 
-    // 4. GESTIONE EVENTI SOCKET.IO RICEVUTI DAL SERVER
+    // 4. ASCOLTO EVENTI SOCKET.IO
     socket.on('aggiornaStato', (gameState) => {
       if (gameState.punteggi) aggiornaClassifica(gameState.punteggi);
-      if (gameState.domandaAttiva) mostraOverlayDomanda(gameState.domandaAttiva);
-      if (gameState.prenotato) mostraGiocatorePrenotato(gameState.prenotato);
+      if (gameState.domandaAttiva) mostraDomanda(gameState.domandaAttiva);
+      if (gameState.prenotato) mostraGiocatore(gameState.prenotato);
     });
 
-    socket.on('apriDomanda', (data) => {
-      mostraOverlayDomanda(data);
-    });
-
-    socket.on('giocatorePrenotato', (nickname) => {
-      mostraGiocatorePrenotato(nickname);
-    });
-
-    socket.on('aggiornaPunteggi', (punteggi) => {
-      aggiornaClassifica(punteggi);
-    });
-
+    socket.on('apriDomanda', (data) => mostraDomanda(data));
+    socket.on('giocatorePrenotato', (nick) => mostraGiocatore(nick));
+    socket.on('aggiornaPunteggi', (punteggi) => aggiornaClassifica(punteggi));
+    
     socket.on('chiudiDomanda', (data) => {
       aggiornaClassifica(data.punteggi);
-      nascondiOverlayDomanda();
+      nascondiDomanda();
     });
 
     socket.on('riapriBuzzer', (punteggi) => {
       aggiornaClassifica(punteggi);
       const box = document.getElementById('box-prenotazione');
       const testo = document.getElementById('testo-prenotazione');
-      box.className = "w-full max-w-xl py-4 px-6 rounded-2xl bg-emerald-950/60 border border-emerald-500/50 animate-bounce";
-      testo.className = "text-2xl font-black text-emerald-400";
-      testo.innerText = "🟢 BUZZER RIAPERTO! Risposta errata.";
+      box.className = "w-full max-w-xl py-4 px-6 rounded-2xl bg-green-950 border border-green-500";
+      testo.className = "text-2xl font-black text-green-400";
+      testo.innerText = "🟢 BUZZER RIAPERTO!";
     });
 
     socket.on('resetBuzzer', () => {
       const box = document.getElementById('box-prenotazione');
       const testo = document.getElementById('testo-prenotazione');
-      box.className = "w-full max-w-xl py-4 px-6 rounded-2xl bg-slate-900 border border-slate-800";
-      testo.className = "text-2xl font-black text-slate-400";
+      box.className = "w-full max-w-xl py-4 px-6 rounded-2xl bg-gray-900 border border-gray-800";
+      testo.className = "text-2xl font-black text-gray-400";
       testo.innerText = "🔔 BUZZER ATTIVO! In attesa di prenotazione...";
     });
 
-    // 5. FUNZIONI DI SUPPORTO PER L'INTERFACCIA
-    function mostraOverlayDomanda(data) {
+    function mostraDomanda(data) {
       document.getElementById('domanda-categoria-punti').innerText = `${data.categoria} - ${data.punti} PT`;
       document.getElementById('domanda-testo').innerText = data.testo;
-      
-      const box = document.getElementById('box-prenotazione');
-      const testo = document.getElementById('testo-prenotazione');
-      box.className = "w-full max-w-xl py-4 px-6 rounded-2xl bg-slate-900 border border-slate-800";
-      testo.className = "text-2xl font-black text-slate-400";
-      testo.innerText = "🔔 BUZZER ATTIVO! In attesa di prenotazione...";
-
-      document.getElementById('stato-tabellone').innerText = "Domanda in corso";
-      document.getElementById('stato-tabellone').className = "px-4 py-2 bg-amber-600 text-white rounded-xl font-bold";
-      
-      const overlay = document.getElementById('overlay-domanda');
-      overlay.classList.remove('hidden');
-      overlay.classList.add('flex');
+      document.getElementById('overlay-domanda').classList.remove('hidden');
+      document.getElementById('overlay-domanda').classList.add('flex');
     }
 
-    function nascondiOverlayDomanda() {
-      const overlay = document.getElementById('overlay-domanda');
-      overlay.classList.remove('flex');
-      overlay.classList.add('hidden');
-
-      document.getElementById('stato-tabellone').innerText = "Seleziona una casella";
-      document.getElementById('stato-tabellone').className = "px-4 py-2 bg-slate-800 text-slate-400 rounded-xl font-bold";
+    function nascondiDomanda() {
+      document.getElementById('overlay-domanda').classList.remove('flex');
+      document.getElementById('overlay-domanda').classList.add('hidden');
     }
 
-    function mostraGiocatorePrenotato(nickname) {
+    function mostraGiocatore(nick) {
       const box = document.getElementById('box-prenotazione');
       const testo = document.getElementById('testo-prenotazione');
-      box.className = "w-full max-w-xl py-4 px-6 rounded-2xl bg-red-950/80 border-2 border-red-500 animate-pulse shadow-2xl";
+      box.className = "w-full max-w-xl py-4 px-6 rounded-2xl bg-red-950 border-2 border-red-500 animate-pulse";
       testo.className = "text-3xl font-black text-red-400";
-      testo.innerText = `🚨 PRENOTATO: ${nickname.toUpperCase()}`;
+      testo.innerText = `🚨 PRENOTATO: ${nick.toUpperCase()}`;
     }
 
     function aggiornaClassifica(punteggi) {
       const container = document.getElementById('lista-classifica');
       const entries = Object.entries(punteggi);
+      if (entries.length === 0) return;
 
-      if (entries.length === 0) {
-        container.innerHTML = `<div class="text-slate-500 text-center py-8 font-medium">In attesa dei concorrenti...</div>`;
-        return;
-      }
-
-      // Ordina per punteggio decrescente
       entries.sort((a, b) => b[1] - a[1]);
 
-      container.innerHTML = entries.map(([nick, pt], index) => `
-        <div class="flex justify-between items-center bg-slate-950 p-4 rounded-2xl border border-slate-800">
-          <div class="flex items-center space-x-3">
-            <span class="font-mono font-black text-amber-400 text-sm">#${index + 1}</span>
-            <span class="font-bold text-white text-base">${nick}</span>
-          </div>
-          <span class="font-mono font-extrabold text-emerald-400 text-lg">${pt} pt</span>
+      container.innerHTML = entries.map(([nick, pt], i) => `
+        <div class="flex justify-between items-center bg-gray-950 p-4 rounded-2xl border border-gray-800">
+          <span class="font-bold text-white">#${i + 1} ${nick}</span>
+          <span class="font-mono font-extrabold text-green-400">${pt} pt</span>
         </div>
       `).join('');
     }
   </script>
-
 </body>
 </html>

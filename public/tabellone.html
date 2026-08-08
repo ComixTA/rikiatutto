@@ -6,58 +6,238 @@
   <title>Rischiatutto - Tabellone TV</title>
   <script src="/socket.io/socket.io.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
-<body class="bg-slate-950 text-white min-h-screen p-6 flex flex-col justify-between">
+<body class="bg-slate-950 text-white min-h-screen p-6 flex flex-col justify-between select-none">
 
-  <!-- HEADER CON PIN STANZA E QR CODE -->
-  <header class="flex justify-between items-center bg-slate-900 p-4 rounded-3xl border border-slate-800 shadow-2xl mb-6">
-    <div>
-      <h1 class="text-3xl font-black text-amber-400 tracking-wider">⚡ RISCHIATUTTO</h1>
-      <p class="text-slate-400 text-sm">Inquadra il QR o digita il PIN per giocare</p>
+  <!-- HEADER CON TITOLO E STATO DEL GIOCO -->
+  <header class="flex justify-between items-center mb-6 bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-xl">
+    <div class="flex items-center space-x-3">
+      <span class="text-3xl">📺</span>
+      <h1 class="text-3xl font-black text-amber-400 tracking-wider">RISCHIATUTTO</h1>
     </div>
-
-    <div class="flex items-center space-x-6">
-      <div class="text-center">
-        <span class="text-xs text-slate-500 font-bold uppercase tracking-widest block">PIN STANZA</span>
-        <span id="display-pin" class="text-4xl font-black font-mono text-emerald-400">----</span>
-      </div>
-
-      <div class="flex items-center space-x-3 bg-slate-950 p-2 rounded-2xl border border-slate-800">
-        <div id="qrcode-container" class="bg-white p-2 rounded-xl shadow-lg"></div>
-      </div>
+    <div id="stato-tabellone" class="px-4 py-2 bg-slate-800 rounded-xl font-bold text-slate-400">
+      Seleziona una casella
     </div>
   </header>
 
-  <!-- SELEZIONE CASSELLA / DOMANDA ATTIVA E TABELLONE -->
-  <main class="my-auto text-center">
-    <div id="box-stato" class="text-2xl font-bold text-slate-400">Creazione stanza in corso...</div>
+  <!-- CONTENUTO PRINCIPALE -->
+  <main class="grid grid-cols-1 lg:grid-cols-4 gap-6 my-auto">
+    
+    <!-- AREA TABELLONE / DOMANDA (3 COLONNE) -->
+    <div class="lg:col-span-3 bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl relative min-h-[500px] flex items-center justify-center">
+      
+      <!-- GRIGLIA TABELLONE CATEGORIE -->
+      <div id="griglia-tabellone" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 w-full">
+        <!-- Generato dinamicamente via JS da domande.json -->
+      </div>
+
+      <!-- POPUP / OVERLAY DOMANDA ATTIVA -->
+      <div id="overlay-domanda" class="hidden absolute inset-0 bg-slate-950/95 rounded-3xl p-8 flex-col justify-between items-center text-center z-10 border-2 border-amber-500/50 backdrop-blur-md">
+        <div class="space-y-2 w-full">
+          <span id="domanda-categoria-punti" class="inline-block bg-amber-500 text-slate-950 font-black text-lg px-4 py-1 rounded-full uppercase tracking-widest">
+            CATEGORIA - 000 PT
+          </span>
+          <div id="domanda-testo" class="text-3xl md:text-4xl font-extrabold text-white leading-relaxed pt-6">
+            In attesa della domanda...
+          </div>
+        </div>
+
+        <!-- BOX NOTIFICA PRENOTAZIONE BUZZER -->
+        <div id="box-prenotazione" class="w-full max-w-xl py-4 px-6 rounded-2xl bg-slate-900 border border-slate-800 transition-all">
+          <span id="testo-prenotazione" class="text-2xl font-black text-slate-400">
+            🔔 BUZZER ATTIVO! In attesa di prenotazione...
+          </span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- SIDEBAR CLASSIFICA CONCORRENTI (1 COLONNA) -->
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl flex flex-col justify-between">
+      <div>
+        <h2 class="text-xl font-black text-indigo-400 uppercase tracking-wide mb-4 flex items-center space-x-2">
+          <span>🏆</span>
+          <span>Classifica</span>
+        </h2>
+        <div id="lista-classifica" class="space-y-3">
+          <div class="text-slate-500 text-center py-8 font-medium">In attesa dei concorrenti...</div>
+        </div>
+      </div>
+
+      <div class="mt-6 pt-4 border-t border-slate-800 text-center text-xs text-slate-500 font-semibold uppercase tracking-widest">
+        Collegati a /giocatore.html
+      </div>
+    </div>
+
   </main>
 
+  <!-- SCRIPT LOGICA TABELLONE -->
   <script>
     const socket = io();
 
-    // Richiede la creazione di una nuova stanza
-    socket.emit('creaStanza');
-
-    socket.on('stanzaCreata', ({ pin }) => {
-      document.getElementById('display-pin').innerText = pin;
-      document.getElementById('box-stato').innerText = "In attesa delle domande dalla regia...";
-
-      // Genera il QR Code dinamico con il parametro PIN
-      const hostAttuale = window.location.host;
-      const urlGiocatore = `${window.location.protocol}//${hostAttuale}/giocatore.html?pin=${pin}`;
-
-      document.getElementById("qrcode-container").innerHTML = ""; // Pulisci prima
-      new QRCode(document.getElementById("qrcode-container"), {
-        text: urlGiocatore,
-        width: 80,
-        height: 80,
-        colorDark : "#020617",
-        colorLight : "#ffffff",
-        correctLevel : QRCode.CorrectLevel.H
+    // 1. CARICAMENTO DEL FILE JSON CON LE DOMANDE
+    fetch('/domande.json')
+      .then(response => {
+        if (!response.ok) throw new Error("Impossibile caricare domande.json");
+        return response.json();
+      })
+      .then(data => {
+        costruisciGrigliaTabellone(data.categorie);
+      })
+      .catch(err => {
+        console.error("Errore caricamento domande:", err);
+        document.getElementById('griglia-tabellone').innerHTML = `
+          <div class="col-span-full text-center text-red-400 font-bold p-8">
+            ❌ Errore nel caricamento del file domande.json nella cartella public/
+          </div>`;
       });
+
+    // 2. FUNZIONE PER GENERARE LA GRIGLIA SUL TABELLONE
+    function costruisciGrigliaTabellone(categorie) {
+      const container = document.getElementById('griglia-tabellone');
+      container.innerHTML = '';
+
+      categorie.forEach((cat, indexCat) => {
+        let colonnaHtml = `
+          <div class="flex flex-col space-y-3">
+            <div class="bg-indigo-900/80 border border-indigo-500/30 text-amber-300 font-black text-center p-3 rounded-xl uppercase tracking-wider text-xs md:text-sm h-14 flex items-center justify-center shadow-lg">
+              ${cat.nome}
+            </div>
+        `;
+
+        cat.domande.forEach((d, indexDom) => {
+          const btnId = `btn-${indexCat}-${indexDom}`;
+          // Sanitizza eventuali virgolette nel testo
+          const testoPulito = d.testo.replace(/'/g, "\\'").replace(/"/g, "&quot;");
+          const rispostaPulita = d.risposta.replace(/'/g, "\\'").replace(/"/g, "&quot;");
+
+          colonnaHtml += `
+            <button id="${btnId}" 
+                    onclick="selezionaDomanda('${cat.nome}', ${d.punti}, '${testoPulito}', '${rispostaPulita}', '${btnId}')" 
+                    class="bg-slate-950 hover:bg-amber-500 text-amber-400 hover:text-slate-950 font-black text-2xl py-5 rounded-2xl border border-slate-800 hover:border-amber-400 transition-all shadow-md transform active:scale-95">
+              ${d.punti}
+            </button>
+          `;
+        });
+
+        colonnaHtml += `</div>`;
+        container.innerHTML += colonnaHtml;
+      });
+    }
+
+    // 3. SELEZIONE DELLA DOMANDA
+    function selezionaDomanda(categoria, punti, testo, risposta, btnId) {
+      // Disabilita visivamente il pulsante cliccato
+      const btn = document.getElementById(btnId);
+      if (btn) {
+        btn.disabled = true;
+        btn.className = "bg-slate-900/40 text-slate-700 font-black text-2xl py-5 rounded-2xl border border-slate-800/50 cursor-not-allowed line-through";
+      }
+
+      // Invia l'evento al server Socket.IO
+      socket.emit('selezionaDomanda', { categoria, punti, testo, risposta });
+    }
+
+    // 4. GESTIONE EVENTI SOCKET.IO RICEVUTI DAL SERVER
+    socket.on('aggiornaStato', (gameState) => {
+      if (gameState.punteggi) aggiornaClassifica(gameState.punteggi);
+      if (gameState.domandaAttiva) mostraOverlayDomanda(gameState.domandaAttiva);
+      if (gameState.prenotato) mostraGiocatorePrenotato(gameState.prenotato);
     });
+
+    socket.on('apriDomanda', (data) => {
+      mostraOverlayDomanda(data);
+    });
+
+    socket.on('giocatorePrenotato', (nickname) => {
+      mostraGiocatorePrenotato(nickname);
+    });
+
+    socket.on('aggiornaPunteggi', (punteggi) => {
+      aggiornaClassifica(punteggi);
+    });
+
+    socket.on('chiudiDomanda', (data) => {
+      aggiornaClassifica(data.punteggi);
+      nascondiOverlayDomanda();
+    });
+
+    socket.on('riapriBuzzer', (punteggi) => {
+      aggiornaClassifica(punteggi);
+      const box = document.getElementById('box-prenotazione');
+      const testo = document.getElementById('testo-prenotazione');
+      box.className = "w-full max-w-xl py-4 px-6 rounded-2xl bg-emerald-950/60 border border-emerald-500/50 animate-bounce";
+      testo.className = "text-2xl font-black text-emerald-400";
+      testo.innerText = "🟢 BUZZER RIAPERTO! Risposta errata.";
+    });
+
+    socket.on('resetBuzzer', () => {
+      const box = document.getElementById('box-prenotazione');
+      const testo = document.getElementById('testo-prenotazione');
+      box.className = "w-full max-w-xl py-4 px-6 rounded-2xl bg-slate-900 border border-slate-800";
+      testo.className = "text-2xl font-black text-slate-400";
+      testo.innerText = "🔔 BUZZER ATTIVO! In attesa di prenotazione...";
+    });
+
+    // 5. FUNZIONI DI SUPPORTO PER L'INTERFACCIA
+    function mostraOverlayDomanda(data) {
+      document.getElementById('domanda-categoria-punti').innerText = `${data.categoria} - ${data.punti} PT`;
+      document.getElementById('domanda-testo').innerText = data.testo;
+      
+      const box = document.getElementById('box-prenotazione');
+      const testo = document.getElementById('testo-prenotazione');
+      box.className = "w-full max-w-xl py-4 px-6 rounded-2xl bg-slate-900 border border-slate-800";
+      testo.className = "text-2xl font-black text-slate-400";
+      testo.innerText = "🔔 BUZZER ATTIVO! In attesa di prenotazione...";
+
+      document.getElementById('stato-tabellone').innerText = "Domanda in corso";
+      document.getElementById('stato-tabellone').className = "px-4 py-2 bg-amber-600 text-white rounded-xl font-bold";
+      
+      const overlay = document.getElementById('overlay-domanda');
+      overlay.classList.remove('hidden');
+      overlay.classList.add('flex');
+    }
+
+    function nascondiOverlayDomanda() {
+      const overlay = document.getElementById('overlay-domanda');
+      overlay.classList.remove('flex');
+      overlay.classList.add('hidden');
+
+      document.getElementById('stato-tabellone').innerText = "Seleziona una casella";
+      document.getElementById('stato-tabellone').className = "px-4 py-2 bg-slate-800 text-slate-400 rounded-xl font-bold";
+    }
+
+    function mostraGiocatorePrenotato(nickname) {
+      const box = document.getElementById('box-prenotazione');
+      const testo = document.getElementById('testo-prenotazione');
+      box.className = "w-full max-w-xl py-4 px-6 rounded-2xl bg-red-950/80 border-2 border-red-500 animate-pulse shadow-2xl";
+      testo.className = "text-3xl font-black text-red-400";
+      testo.innerText = `🚨 PRENOTATO: ${nickname.toUpperCase()}`;
+    }
+
+    function aggiornaClassifica(punteggi) {
+      const container = document.getElementById('lista-classifica');
+      const entries = Object.entries(punteggi);
+
+      if (entries.length === 0) {
+        container.innerHTML = `<div class="text-slate-500 text-center py-8 font-medium">In attesa dei concorrenti...</div>`;
+        return;
+      }
+
+      // Ordina per punteggio decrescente
+      entries.sort((a, b) => b[1] - a[1]);
+
+      container.innerHTML = entries.map(([nick, pt], index) => `
+        <div class="flex justify-between items-center bg-slate-950 p-4 rounded-2xl border border-slate-800">
+          <div class="flex items-center space-x-3">
+            <span class="font-mono font-black text-amber-400 text-sm">#${index + 1}</span>
+            <span class="font-bold text-white text-base">${nick}</span>
+          </div>
+          <span class="font-mono font-extrabold text-emerald-400 text-lg">${pt} pt</span>
+        </div>
+      `).join('');
+    }
   </script>
+
 </body>
 </html>

@@ -1,110 +1,79 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// Serviamo i file statici dalla sottocartella "public"
-app.use(express.static(path.join(__dirname, 'public')));
+// Rende pubblica la cartella public (HTML, JS, domande.json)
+app.use(express.static('public'));
 
-// Permette la lettura del file domande.json
-app.get('/domande.json', (req, res) => {
-  res.sendFile(path.join(__dirname, 'domande.json'));
-});
-
-// Gestione delle stanze
-const stanze = {};
-
-function generaPinStanza() {
-  let pin;
-  do {
-    pin = Math.floor(1000 + Math.random() * 9000).toString();
-  } while (stanze[pin]);
-  return pin;
-}
+// Stato del gioco in memoria
+let gameState = {
+  domandaAttiva: null,
+  prenotato: null,
+  punteggi: {}
+};
 
 io.on('connection', (socket) => {
-  let currentRoom = null;
-  let currentNick = null;
+  console.log('Un utente si è connesso:', socket.id);
 
-  // 1. Creazione Stanza (Tabellone)
-  socket.on('creaStanza', () => {
-    const pin = generaPinStanza();
-    stanze[pin] = { punteggi: {}, domandaAttiva: null, prenotato: null };
-    currentRoom = pin;
-    socket.join(pin);
-    socket.emit('stanzaCreata', { pin });
-  });
+  // Invia lo stato attuale al nuovo connesso
+  socket.emit('aggiornaStato', gameState);
 
-  // 2. Ingresso (Giocatore / Regia)
-  socket.on('uniscitiStanza', ({ pin, nickname, ruolo }) => {
-    if (!stanze[pin]) {
-      socket.emit('erroreIngresso', 'PIN Stanza non valido.');
-      return;
+  // Quando un concorrente inserisce il nickname
+  socket.on('registraGiocatore', (nickname) => {
+    if (nickname && !(nickname in gameState.punteggi)) {
+      gameState.punteggi[nickname] = 0;
     }
-
-    currentRoom = pin;
-    socket.join(pin);
-
-    if (ruolo === 'giocatore') {
-      currentNick = nickname;
-      if (stanze[pin].punteggi[nickname] === undefined) {
-        stanze[pin].punteggi[nickname] = 0;
-      }
-    }
-
-    socket.emit('statoIniziale', stanze[pin]);
-    io.to(pin).emit('aggiornaPunteggi', stanze[pin].punteggi);
+    io.emit('aggiornaPunteggi', gameState.punteggi);
   });
 
-  // 3. Selezione Domanda
-  socket.on('selezionaDomanda', (domandaData) => {
-    if (!currentRoom || !stanze[currentRoom]) return;
-    stanze[currentRoom].domandaAttiva = domandaData;
-    stanze[currentRoom].prenotato = null;
-    io.to(currentRoom).emit('apriDomanda', domandaData);
+  // QUANDO DAL TABELLONE VIENE CLICCATA UNA DOMANDA
+  socket.on('selezionaDomanda', (data) => {
+    gameState.domandaAttiva = data;
+    gameState.prenotato = null;
+    // Invia l'evento 'apriDomanda' a TUTTI i client (Tabellone, Regia, Giocatori)
+    io.emit('apriDomanda', data);
   });
 
-  // 4. Pressione Buzzer
-  socket.on('pressBuzzer', () => {
-    if (!currentRoom || !stanze[currentRoom]) return;
-    const stanza = stanze[currentRoom];
-
-    if (stanza.domandaAttiva && !stanza.prenotato) {
-      stanza.prenotato = currentNick;
-      io.to(currentRoom).emit('giocatorePrenotato', currentNick);
+  // Quando un giocatore premi il BUZZER
+  socket.on('prenota', (nickname) => {
+    if (gameState.domandaAttiva && !gameState.prenotato) {
+      gameState.prenotato = nickname;
+      io.emit('giocatorePrenotato', nickname);
     }
   });
 
-  // 5. Esito Risposta (Regia)
-  socket.on('esitoRisposta', ({ giocatore, esito, punti }) => {
-    if (!currentRoom || !stanze[currentRoom]) return;
-    const stanza = stanze[currentRoom];
-
+  // Gestione dell'esito dalla Regia
+  socket.on('esitoRisposta', (data) => {
+    const { giocatore, esito, punti } = data;
+    
     if (esito === 'corretta') {
-      stanza.punteggi[giocatore] = (stanza.punteggi[giocatore] || 0) + punti;
-      stanza.domandaAttiva = null;
-      stanza.prenotato = null;
-      io.to(currentRoom).emit('chiudiDomanda', { punteggi: stanza.punteggi, vincitore: giocatore });
+      gameState.punteggi[giocatore] = (gameState.punteggi[giocatore] || 0) + punti;
+      gameState.domandaAttiva = null;
+      gameState.prenotato = null;
+      io.emit('chiudiDomanda', { punteggi: gameState.punteggi });
     } else if (esito === 'errata') {
-      stanza.punteggi[giocatore] = (stanza.punteggi[giocatore] || 0) - punti;
-      stanza.prenotato = null;
-      io.to(currentRoom).emit('riapriBuzzer', stanza.punteggi);
+      gameState.punteggi[giocatore] = (gameState.punteggi[giocatore] || 0) - punti;
+      gameState.prenotato = null;
+      io.emit('riapriBuzzer', gameState.punteggi);
     }
   });
 
-  // Reset del Turno
+  // Sblocco / Reset dalla Regia
   socket.on('resetTurno', () => {
-    if (!currentRoom || !stanze[currentRoom]) return;
-    stanze[currentRoom].prenotato = null;
-    io.to(currentRoom).emit('resetBuzzer');
+    gameState.prenotato = null;
+    io.emit('resetBuzzer');
+  });
+
+  socket.on('disconnect', () => {
+    console.log('Utente disconnesso:', socket.id);
   });
 });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`🚀 Server Rischiatutto attivo su http://localhost:${PORT}`);
+  console.log(`Server attivo sulla porta ${PORT}`);
 });

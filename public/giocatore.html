@@ -2,97 +2,163 @@
 <html lang="it">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Rischiatutto - Concorrente</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rischiatutto - Pulsantiera Giocatore</title>
   <script src="/socket.io/socket.io.js"></script>
-  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body { background-color: #030712; color: #ffffff; min-height: 100vh; padding: 20px; display: flex; flex-direction: column; justify-content: center; align-items: center; user-select: none; }
+    
+    .card { background-color: #0f172a; border: 2px solid #1e293b; border-radius: 20px; padding: 24px; width: 100%; max-width: 400px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+    .title { font-size: 24px; font-weight: 900; color: #facc15; margin-bottom: 20px; }
+    
+    input { width: 100%; padding: 14px; border-radius: 12px; border: 2px solid #374151; background: #020617; color: #fff; font-size: 18px; font-weight: bold; text-align: center; margin-bottom: 12px; }
+    input:focus { border-color: #f59e0b; outline: none; }
+    
+    button.btn-login { width: 100%; padding: 16px; border-radius: 12px; border: none; background: #f59e0b; color: #000; font-weight: 900; font-size: 18px; cursor: pointer; }
+    
+    /* PULSANTE BUZZER */
+    .buzzer-container { display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 400px; }
+    .player-info { display: flex; justify-content: space-between; width: 100%; background: #0f172a; padding: 12px 20px; border-radius: 14px; border: 1px solid #1e293b; margin-bottom: 20px; font-weight: bold; }
+    .player-pts { color: #34d399; font-family: monospace; font-size: 18px; }
+
+    .btn-buzzer {
+      width: 240px;
+      height: 240px;
+      border-radius: 50%;
+      border: 8px solid #991b1b;
+      background: radial-gradient(circle, #ef4444 0%, #991b1b 100%);
+      color: #ffffff;
+      font-size: 28px;
+      font-weight: 900;
+      cursor: pointer;
+      box-shadow: 0 12px 0 #7f1d1d, 0 15px 20px rgba(0,0,0,0.6);
+      transition: all 0.1s ease;
+      margin: 20px 0;
+    }
+
+    .btn-buzzer:active:not(:disabled) {
+      transform: translateY(8px);
+      box-shadow: 0 4px 0 #7f1d1d, 0 8px 10px rgba(0,0,0,0.6);
+    }
+
+    .btn-buzzer:disabled {
+      background: #374151;
+      border-color: #1f2937;
+      color: #9ca3af;
+      box-shadow: none;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .status-msg { font-size: 16px; font-weight: bold; color: #94a3b8; margin-top: 10px; }
+  </style>
 </head>
-<body class="bg-slate-950 text-white min-h-screen flex flex-col justify-between p-4">
+<body>
 
-  <!-- LOGIN: PIN + NICKNAME -->
-  <div id="screen-join" class="my-auto max-w-sm w-full mx-auto bg-slate-900 border border-slate-800 p-6 rounded-3xl text-center shadow-2xl space-y-4">
-    <h1 class="text-3xl font-black text-amber-400">⚡ RISCHIATUTTO</h1>
-    
-    <div>
-      <label class="text-xs font-semibold text-slate-500 uppercase tracking-widest block text-left mb-1">PIN Stanza</label>
-      <input type="number" id="input-pin" placeholder="1234" class="w-full p-3 bg-slate-950 border border-slate-700 rounded-2xl text-center text-2xl font-black font-mono text-emerald-400 focus:outline-none focus:border-emerald-400">
-    </div>
-
-    <div>
-      <label class="text-xs font-semibold text-slate-500 uppercase tracking-widest block text-left mb-1">Nickname</label>
-      <input type="text" id="input-nickname" placeholder="Il tuo Nome" class="w-full p-3 bg-slate-950 border border-slate-700 rounded-2xl text-center text-xl font-bold text-white focus:outline-none focus:border-amber-400">
-    </div>
-    
-    <button onclick="entraInGioco()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-lg py-4 rounded-2xl transition shadow-lg active:scale-95">
-      ENTRA IN PARTITA
-    </button>
+  <!-- SCHERMATA DI LOGIN -->
+  <div id="screen-login" class="card">
+    <div class="title">🎮 UNISCITI ALLA PARTITA</div>
+    <input type="text" id="input-pin" maxlength="4" placeholder="Codice Stanza (PIN)">
+    <input type="text" id="input-nick" placeholder="Il tuo Nickname">
+    <button class="btn-login" onclick="entraInPartita()">ENTRA</button>
   </div>
 
-  <!-- SCHERMATA BUZZER (Hidden all'inizio) -->
-  <div id="screen-game" class="hidden flex-col justify-between h-full min-h-[90vh] w-full max-w-md mx-auto">
-    <header class="flex justify-between items-center bg-slate-900 p-4 rounded-2xl border border-slate-800">
-      <div>
-        <span id="player-nick" class="text-xl font-black text-white">---</span>
-        <span id="display-pin-game" class="text-xs text-emerald-400 font-mono block">PIN: ----</span>
-      </div>
-      <div class="text-right">
-        <span id="player-punti" class="text-2xl font-black text-amber-400 font-mono">0 pt</span>
-      </div>
-    </header>
-
-    <div class="my-auto flex flex-col items-center justify-center">
-      <button id="btn-buzzer" onclick="premiBuzzer()" disabled class="w-64 h-64 rounded-full bg-slate-800 border-8 border-slate-700 text-slate-600 font-black text-5xl">
-        BUZZ!
-      </button>
-      <div id="status-feedback" class="mt-8 text-center text-lg font-bold text-slate-400 px-4 py-3 rounded-2xl bg-slate-900 border border-slate-800 w-full">
-        In attesa della domanda...
-      </div>
+  <!-- SCHERMATA GAMEPLAY / BUZZER -->
+  <div id="screen-game" class="buzzer-container" style="display: none;">
+    <div class="player-info">
+      <span id="display-nick">---</span>
+      <span id="display-punti" class="player-pts">0 pt</span>
     </div>
+
+    <button id="btn-buzzer" class="btn-buzzer" onclick="premiBuzzer()" disabled>
+      PREMIMI!
+    </button>
+
+    <div id="status-msg" class="status-msg">In attesa che venga aperta una domanda...</div>
   </div>
 
   <script>
-    const socket = io();
-    let mioNickname = "";
-    let pinStanza = "";
+    let socket;
+    let mioNick = "";
+    let codiceStanza = "";
 
-    // Legge eventuale PIN dall'URL (se passato via QR Code)
-    window.addEventListener('DOMContentLoaded', () => {
-      const urlParams = new URLSearchParams(window.location.search);
-      const pinParam = urlParams.get('pin');
-      if (pinParam) {
-        document.getElementById('input-pin').value = pinParam;
-      }
-    });
+    function entraInPartita() {
+      const pin = document.getElementById('input-pin').value.trim();
+      const nick = document.getElementById('input-nick').value.trim();
 
-    function entraInGioco() {
-      pinStanza = document.getElementById('input-pin').value.trim();
-      mioNickname = document.getElementById('input-nickname').value.trim();
+      if (!pin || !nick) return alert("Inserisci sia il PIN che il Nickname!");
 
-      if (!pinStanza || !mioNickname) {
-        alert("Inserisci sia il PIN che il Nickname!");
-        return;
-      }
+      codiceStanza = pin;
+      mioNick = nick;
 
-      socket.emit('uniscitiStanza', { pin: pinStanza, nickname: mioNickname, ruolo: 'giocatore' });
+      socket = io();
+
+      // Invia i dati esatti attesi da server.js
+      socket.emit('uniscitiStanza', {
+        codiceStanza: codiceStanza,
+        nickname: mioNick,
+        ruolo: 'giocatore'
+      });
+
+      document.getElementById('screen-login').style.display = 'none';
+      document.getElementById('screen-game').style.display = 'flex';
+      document.getElementById('display-nick').innerText = mioNick.toUpperCase();
+
+      // GESTIONE EVENTI SOCKET
+      socket.on('aggiornaPunteggi', (punteggi) => {
+        if (punteggi && punteggi[mioNick] !== undefined) {
+          document.getElementById('display-punti').innerText = `${punteggi[mioNick]} pt`;
+        }
+      });
+
+      socket.on('apriDomanda', () => {
+        const btn = document.getElementById('btn-buzzer');
+        btn.disabled = false;
+        document.getElementById('status-msg').innerText = "🟢 DOMANDA ATTIVA! Premi il buzzer!";
+        document.getElementById('status-msg').style.color = "#34d399";
+      });
+
+      socket.on('giocatorePrenotato', (nick) => {
+        const btn = document.getElementById('btn-buzzer');
+        btn.disabled = true;
+
+        if (nick.toLowerCase() === mioNick.toLowerCase()) {
+          document.getElementById('status-msg').innerText = "🚨 TI SEI PRENOTATO! Rispondi a voce!";
+          document.getElementById('status-msg').style.color = "#facc15";
+        } else {
+          document.getElementById('status-msg').innerText = `🔒 Si è prenotato ${nick.toUpperCase()}`;
+          document.getElementById('status-msg').style.color = "#ef4444";
+        }
+      });
+
+      socket.on('riapriBuzzer', (punteggi) => {
+        if (punteggi && punteggi[mioNick] !== undefined) {
+          document.getElementById('display-punti').innerText = `${punteggi[mioNick]} pt`;
+        }
+        const btn = document.getElementById('btn-buzzer');
+        btn.disabled = false;
+        document.getElementById('status-msg').innerText = "🟢 BUZZER RIAPERTO! Puoi prenotarti!";
+        document.getElementById('status-msg').style.color = "#34d399";
+      });
+
+      socket.on('chiudiDomanda', (data) => {
+        const btn = document.getElementById('btn-buzzer');
+        btn.disabled = true;
+        document.getElementById('status-msg').innerText = "In attesa della prossima domanda...";
+        document.getElementById('status-msg').style.color = "#94a3b8";
+
+        if (data && data.punteggi && data.punteggi[mioNick] !== undefined) {
+          document.getElementById('display-punti').innerText = `${data.punteggi[mioNick]} pt`;
+        }
+      });
     }
-
-    socket.on('statoIniziale', (stanza) => {
-      document.getElementById('player-nick').innerText = mioNickname;
-      document.getElementById('display-pin-game').innerText = `PIN: ${pinStanza}`;
-      document.getElementById('screen-join').classList.add('hidden');
-      document.getElementById('screen-game').classList.remove('hidden');
-      document.getElementById('screen-game').classList.add('flex');
-    });
-
-    socket.on('erroreIngresso', (msg) => {
-      alert(msg);
-    });
 
     function premiBuzzer() {
-      socket.emit('pressBuzzer');
+      if (socket) {
+        socket.emit('prenotaBuzzer');
+      }
     }
-
-    // [Mantieni qui tutti gli altri socket.on del pulsante: apriDomanda, giocatorePrenotato, ecc.]
   </script>
 </body>
 </html>

@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rischiatutto - Pannello Regia</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-white min-h-screen p-6 flex flex-col justify-between">
+
+  <header class="flex justify-between items-center mb-6 bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow-xl">
+    <h1 class="text-2xl font-black text-amber-400 tracking-wider">🎛️ REGIA / PRESENTATORE</h1>
+    <div id="stato-gioco" class="px-4 py-2 bg-slate-800 rounded-xl font-bold text-slate-400">
+      Nessuna domanda attiva
+    </div>
+  </header>
+
+  <main class="grid grid-cols-1 md:grid-cols-3 gap-6 my-auto">
+    
+    <!-- COLONNA 1 & 2: CONTROLLO DOMANDA CORRENTE E BUZZER -->
+    <div class="md:col-span-2 bg-slate-900 border border-slate-800 rounded-3xl p-6 flex flex-col justify-between shadow-2xl">
+      <div>
+        <h2 class="text-lg font-bold text-indigo-400 uppercase tracking-wide mb-4">Controllo Domanda Attiva</h2>
+        
+        <div class="bg-slate-950 p-6 rounded-2xl border border-slate-800 mb-6 space-y-4">
+          <div>
+            <span class="text-xs font-semibold text-slate-500 uppercase tracking-widest">Domanda in corso:</span>
+            <div id="regia-testo-domanda" class="text-xl font-semibold text-slate-200 mt-1">In attesa che venga scelta una casella dal tabellone...</div>
+          </div>
+
+          <div class="p-4 bg-amber-950/40 border border-amber-500/40 rounded-xl">
+            <span class="text-xs font-semibold text-amber-400 uppercase tracking-widest">Risposta Corretta (Segreta):</span>
+            <div id="regia-risposta" class="text-2xl font-black text-amber-300 mt-1">---</div>
+          </div>
+        </div>
+
+        <!-- Box Prenotazione Buzzer in Regia -->
+        <div id="regia-box-buzzer" class="p-6 bg-slate-950 border border-slate-800 rounded-2xl text-center mb-6">
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-widest block mb-2">Stato Prenotazioni:</span>
+          <div id="regia-chi-ha-premuto" class="text-2xl font-bold text-slate-400">Nessun concorrente si è ancora prenotato</div>
+        </div>
+      </div>
+
+      <!-- Pulsanti Gestione Esito -->
+      <div class="grid grid-cols-3 gap-4">
+        <button onclick="gestisciRisposta('corretta')" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 px-4 rounded-xl transition shadow-lg">
+          ✅ Corretta (+ Punti)
+        </button>
+        <button onclick="gestisciRisposta('errata')" class="bg-red-600 hover:bg-red-500 text-white font-bold py-4 px-4 rounded-xl transition shadow-lg">
+          ❌ Errata (- Punti)
+        </button>
+        <button onclick="resetTurno()" class="bg-slate-700 hover:bg-slate-600 text-white font-bold py-4 px-4 rounded-xl transition shadow-lg">
+          🔄 Sblocca / Reset
+        </button>
+      </div>
+    </div>
+
+    <!-- COLONNA 3: CLASSIFICA E PUNTEGGI CONCORRENTI -->
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl flex flex-col">
+      <h2 class="text-lg font-bold text-indigo-400 uppercase tracking-wide mb-4">Classifica Concorrenti</h2>
+      <div id="lista-punteggi" class="space-y-3 overflow-y-auto flex-grow pr-1">
+        <div class="text-slate-500 text-center py-8">Nessun concorrente connesso</div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    const socket = io();
+    let domandaAttivaCorrente = null;
+    let giocatorePrenotatoCorrente = null;
+
+    // Riceve lo stato globale dal server
+    socket.on('aggiornaStato', (gameState) => {
+      aggiornaPunteggiTabella(gameState.punteggi);
+      if (gameState.domandaAttiva) {
+        impostaDomandaAttiva(gameState.domandaAttiva);
+      }
+      if (gameState.prenotato) {
+        impostaGiocatorePrenotato(gameState.prenotato);
+      }
+    });
+
+    socket.on('apriDomanda', (data) => {
+      impostaDomandaAttiva(data);
+      document.getElementById('stato-gioco').innerText = "Domanda in corso";
+      document.getElementById('stato-gioco').className = "px-4 py-2 bg-amber-600 text-white rounded-xl font-bold";
+    });
+
+    socket.on('giocatorePrenotato', (nickname) => {
+      impostaGiocatorePrenotato(nickname);
+    });
+
+    socket.on('aggiornaPunteggi', (punteggi) => {
+      aggiornaPunteggiTabella(punteggi);
+    });
+
+    socket.on('chiudiDomanda', (data) => {
+      aggiornaPunteggiTabella(data.punteggi);
+      pulisciSchermataRegia();
+    });
+
+    socket.on('riapriBuzzer', (punteggi) => {
+      aggiornaPunteggiTabella(punteggi);
+      giocatorePrenotatoCorrente = null;
+      document.getElementById('regia-box-buzzer').className = "p-6 bg-emerald-950/40 border border-emerald-500/40 rounded-2xl text-center mb-6";
+      document.getElementById('regia-chi-ha-premuto').innerText = "🟢 Buzzer riaperto per gli altri!";
+      document.getElementById('regia-chi-ha-premuto').className = "text-2xl font-bold text-emerald-400";
+    });
+
+    socket.on('resetBuzzer', () => {
+      giocatorePrenotatoCorrente = null;
+      document.getElementById('regia-box-buzzer').className = "p-6 bg-slate-950 border border-slate-800 rounded-2xl text-center mb-6";
+      document.getElementById('regia-chi-ha-premuto').innerText = "Nessun concorrente si è ancora prenotato";
+      document.getElementById('regia-chi-ha-premuto').className = "text-2xl font-bold text-slate-400";
+    });
+
+    function impostaDomandaAttiva(data) {
+      domandaAttivaCorrente = data;
+      document.getElementById('regia-testo-domanda').innerText = `[${data.categoria} - ${data.punti}pt] ${data.testo}`;
+      document.getElementById('regia-risposta').innerText = data.risposta;
+      giocatorePrenotatoCorrente = null;
+      document.getElementById('regia-box-buzzer').className = "p-6 bg-slate-950 border border-slate-800 rounded-2xl text-center mb-6";
+      document.getElementById('regia-chi-ha-premuto').innerText = "In attesa che qualcuno prema...";
+      document.getElementById('regia-chi-ha-premuto').className = "text-2xl font-bold text-slate-400";
+    }
+
+    function impostaGiocatorePrenotato(nickname) {
+      giocatorePrenotatoCorrente = nickname;
+      document.getElementById('regia-box-buzzer').className = "p-6 bg-red-950/60 border border-red-500 rounded-2xl text-center mb-6 animate-pulse";
+      document.getElementById('regia-chi-ha-premuto').innerText = `🚨 PRENOTATO: ${nickname}`;
+      document.getElementById('regia-chi-ha-premuto').className = "text-3xl font-black text-red-400";
+    }
+
+    function gestisciRisposta(esito) {
+      if (!domandaAttivaCorrente || !giocatorePrenotatoCorrente) {
+        alert("Nessun giocatore si è prenotato o nessuna domanda attiva!");
+        return;
+      }
+      
+      socket.emit('esitoRisposta', {
+        giocatore: giocatorePrenotatoCorrente,
+        esito: esito,
+        punti: domandaAttivaCorrente.punti
+      });
+    }
+
+    function resetTurno() {
+      socket.emit('resetTurno');
+    }
+
+    function pulisciSchermataRegia() {
+      domandaAttivaCorrente = null;
+      giocatorePrenotatoCorrente = null;
+      document.getElementById('regia-testo-domanda').innerText = "In attesa che venga scelta una casella dal tabellone...";
+      document.getElementById('regia-risposta').innerText = "---";
+      document.getElementById('regia-box-buzzer').className = "p-6 bg-slate-950 border border-slate-800 rounded-2xl text-center mb-6";
+      document.getElementById('regia-chi-ha-premuto').innerText = "Nessun concorrente si è ancora prenotato";
+      document.getElementById('regia-chi-ha-premuto').className = "text-2xl font-bold text-slate-400";
+      document.getElementById('stato-gioco').innerText = "Nessuna domanda attiva";
+      document.getElementById('stato-gioco').className = "px-4 py-2 bg-slate-800 text-white rounded-xl font-bold";
+    }
+
+    function aggiornaPunteggiTabella(punteggi) {
+      const container = document.getElementById('lista-punteggi');
+      const entries = Object.entries(punteggi);
+
+      if (entries.length === 0) {
+        container.innerHTML = `<div class="text-slate-500 text-center py-8">Nessun concorrente connesso</div>`;
+        return;
+      }
+
+      // Ordina in base al punteggio decrescente
+      entries.sort((a, b) => b[1] - a[1]);
+
+      container.innerHTML = entries.map(([nick, pt], index) => `
+        <div class="flex justify-between items-center bg-slate-950 p-4 rounded-xl border border-slate-800">
+          <div class="flex items-center space-x-3">
+            <span class="font-mono font-black text-amber-400">#${index + 1}</span>
+            <span class="font-bold text-white text-lg">${nick}</span>
+          </div>
+          <span class="font-mono font-extrabold text-emerald-400 text-xl">${pt} pt</span>
+        </div>
+      `).join('');
+    }
+  </script>
+</body>
+</html>

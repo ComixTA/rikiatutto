@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rischiatutto - Tabellone TV</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body class="bg-slate-950 text-white min-h-screen p-6 flex flex-col justify-between">
+
+  <!-- HEADER CON PIN STANZA E QR CODE -->
+  <header class="flex justify-between items-center bg-slate-900 p-4 rounded-3xl border border-slate-800 shadow-2xl mb-6">
+    <div>
+      <h1 class="text-3xl font-black text-amber-400 tracking-wider">⚡ RISCHIATUTTO</h1>
+      <p class="text-slate-400 text-sm">Inquadra il QR o digita il PIN per giocare</p>
+    </div>
+
+    <div class="flex items-center space-x-6">
+      <div class="text-center">
+        <span class="text-xs text-slate-500 font-bold uppercase tracking-widest block">PIN STANZA</span>
+        <span id="display-pin" class="text-4xl font-black font-mono text-emerald-400">----</span>
+      </div>
+
+      <div class="flex items-center space-x-3 bg-slate-950 p-2 rounded-2xl border border-slate-800">
+        <div id="qrcode-container" class="bg-white p-2 rounded-xl shadow-lg"></div>
+      </div>
+    </div>
+  </header>
+
+  <!-- SELEZIONE CASSELLA / DOMANDA ATTIVA E TABELLONE -->
+  <main class="my-auto text-center">
+    <div id="box-stato" class="text-2xl font-bold text-slate-400">Creazione stanza in corso...</div>
+  </main>
+
+  <script>
+    const socket = io();
+
+    // Richiede la creazione di una nuova stanza
+    socket.emit('creaStanza');
+
+    socket.on('stanzaCreata', ({ pin }) => {
+      document.getElementById('display-pin').innerText = pin;
+      document.getElementById('box-stato').innerText = "In attesa delle domande dalla regia...";
+
+      // Genera il QR Code dinamico con il parametro PIN
+      const hostAttuale = window.location.host;
+      const urlGiocatore = `${window.location.protocol}//${hostAttuale}/giocatore.html?pin=${pin}`;
+
+      document.getElementById("qrcode-container").innerHTML = ""; // Pulisci prima
+      new QRCode(document.getElementById("qrcode-container"), {
+        text: urlGiocatore,
+        width: 80,
+        height: 80,
+        colorDark : "#020617",
+        colorLight : "#ffffff",
+        correctLevel : QRCode.CorrectLevel.H
+      });
+    });
+  </script>
+</body>
+</html>
